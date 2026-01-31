@@ -1,0 +1,20 @@
+package-as: LegacyVendor
+
+enable-nolib-creation: no
+
+ignore:
+  - README.md
+  - .pkgmeta
+  - .github
+  - .git
+  - .gitignore
+  - .gitattributes
+  - "*.zip"
+  - "*.bak"
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+move-folders:
+  LegacyVendor/LegacyVendor: LegacyVendor
