@@ -66,14 +66,21 @@ addon.EQUIP_SLOTS = {
 
 -- Non-Equippable Item Types (classID from GetItemInfoInstant)
 addon.ITEM_TYPES = {
-    [0] = { name = "Consumables", enabled = false },      -- Consumable
-    [1] = { name = "Containers (Bags)", enabled = false }, -- Container
-    [5] = { name = "Reagents", enabled = false },         -- Reagent
-    [7] = { name = "Trade Goods", enabled = false },      -- Tradeskill
-    [9] = { name = "Recipes", enabled = false },          -- Recipe
-    [12] = { name = "Quest Items", enabled = false },     -- Quest
-    [13] = { name = "Keys", enabled = false },            -- Key
-    [15] = { name = "Miscellaneous", enabled = false },   -- Miscellaneous
+    [0] = { name = "Consumables (Food/Potions)", enabled = false },  -- Consumable
+    [1] = { name = "Containers (Bags)", enabled = false },           -- Container
+    [5] = { name = "Reagents (Crafting)", enabled = false },         -- Reagent
+    [7] = { name = "Trade Goods (Materials)", enabled = false },     -- Tradeskill
+    [9] = { name = "Recipes", enabled = false },                     -- Recipe
+    [12] = { name = "Quest Items", enabled = false },                -- Quest
+    [13] = { name = "Keys", enabled = false },                       -- Key
+    [15] = { name = "Miscellaneous", enabled = false },              -- Miscellaneous
+}
+
+-- Bind Types for filtering
+addon.BIND_TYPES = {
+    bop = { name = "Bind on Pickup (Soulbound)", enabled = true },
+    boe = { name = "Bind on Equip (Bound)", enabled = false },
+    unbound = { name = "Not Bound (Food, Reagents)", enabled = false },
 }
 
 -- Default settings
@@ -84,6 +91,9 @@ local defaults = {
     confirmSell = true, -- Confirm by default for safety
     maxSellPerVisit = 50,
     sellGray = true,
+    sellBoP = true,      -- Sell Bind on Pickup items
+    sellBoE = false,     -- Sell Bind on Equip items (that are bound)
+    sellUnbound = false, -- Sell unbound items (food, reagents, etc.)
     expansions = {},
     rarities = {},
     equipSlots = {},
@@ -188,29 +198,47 @@ local function GetItemExpansionID(itemID)
     return expansionID
 end
 
--- Check if item is Bind on Pickup
-local function IsBindOnPickup(bag, slot)
+-- Get item bind status - returns: "bop", "boe", "unbound", or nil
+local function GetItemBindStatus(bag, slot, itemID)
     local itemLocation = ItemLocation:CreateFromBagAndSlot(bag, slot)
-    if not itemLocation:IsValid() then return false end
+    if not itemLocation:IsValid() then return nil end
     
-    -- Check if item is bound and was BoP
+    -- Check if item is currently bound
     local isBound = C_Item.IsBound(itemLocation)
-    if not isBound then return false end
     
-    local itemID = C_Item.GetItemID(itemLocation)
-    if not itemID then return false end
-    
-    -- Get item binding info from tooltip or item info
+    -- Get item's original binding type from item info
     local bindType
     if C_Item.GetItemInfo then
         local info = { C_Item.GetItemInfo(itemID) }
-        bindType = info[14] -- Bind type: 1 = BoP, 2 = BoE, 3 = BoU, 4 = Quest
+        bindType = info[14] -- Bind type: 1 = BoP, 2 = BoE, 3 = BoU, 4 = Quest, 0 or nil = no bind
     else
         local _, _, _, _, _, _, _, _, _, _, _, _, _, itemBindType = GetItemInfo(itemID)
         bindType = itemBindType
     end
     
-    return bindType == 1 -- LE_ITEM_BIND_ON_ACQUIRE / Bind on Pickup
+    -- Determine status
+    if not isBound then
+        return "unbound"  -- Item is not bound (food, reagents, etc.)
+    elseif bindType == 1 then
+        return "bop"      -- Bind on Pickup
+    elseif bindType == 2 then
+        return "boe"      -- Bind on Equip (but currently bound)
+    elseif bindType == 3 then
+        return "bou"      -- Bind on Use
+    elseif bindType == 4 then
+        return "quest"    -- Quest item
+    else
+        return "unbound"  -- No bind type info, treat as unbound
+    end
+end
+
+-- Legacy function for backwards compatibility
+local function IsBindOnPickup(bag, slot)
+    local itemLocation = ItemLocation:CreateFromBagAndSlot(bag, slot)
+    if not itemLocation:IsValid() then return false end
+    local itemID = C_Item.GetItemID(itemLocation)
+    if not itemID then return false end
+    return GetItemBindStatus(bag, slot, itemID) == "bop"
 end
 
 -- Check if item should be sold
@@ -261,7 +289,10 @@ local function ShouldSellItem(bag, slot)
     local subClassID = itemInfo[13]     -- Item subclass ID
     
     -- No sell price = can't sell
-    if not sellPrice or sellPrice == 0 then return false end
+    if not sellPrice or sellPrice == 0 then 
+        DebugPrint("No sell price:", itemLink)
+        return false 
+    end
     
     -- Special handling for gray items - bypass most filters if sellGray is enabled
     if db.sellGray and quality == 0 then
@@ -277,15 +308,33 @@ local function ShouldSellItem(bag, slot)
         end
     end
     
-    -- Check if BoP
-    if not IsBindOnPickup(bag, slot) then
-        DebugPrint("Not BoP:", itemLink)
+    -- === FILTER 2: BIND STATUS ===
+    local bindStatus = GetItemBindStatus(bag, slot, itemID)
+    DebugPrint("Bind status for", itemLink, ":", bindStatus or "nil")
+    
+    local bindAllowed = false
+    if bindStatus == "bop" and db.sellBoP then
+        bindAllowed = true
+    elseif bindStatus == "boe" and db.sellBoE then
+        bindAllowed = true
+    elseif bindStatus == "unbound" and db.sellUnbound then
+        bindAllowed = true
+    elseif bindStatus == "bou" and db.sellUnbound then
+        -- Bind on Use items treated as unbound
+        bindAllowed = true
+    end
+    
+    if not bindAllowed then
+        DebugPrint("Bind type not enabled:", bindStatus, itemLink)
         return false
     end
     
-    -- === FILTER 2: EXPANSION ===
+    -- === FILTER 3: EXPANSION ===
     local expansionID = GetItemExpansionID(itemID)
-    if not expansionID then return false end
+    if not expansionID then 
+        DebugPrint("Could not determine expansion:", itemLink)
+        return false 
+    end
     
     -- Check if expansion is enabled for selling
     if not db.expansions[expansionID] then
@@ -299,7 +348,7 @@ local function ShouldSellItem(bag, slot)
         return false
     end
     
-    -- === FILTER 3: EQUIPMENT SLOTS (for equippable items) ===
+    -- === FILTER 4: EQUIPMENT SLOTS (for equippable items) ===
     local isEquipment = equipLoc and equipLoc ~= ""
     
     if isEquipment then
@@ -312,19 +361,29 @@ local function ShouldSellItem(bag, slot)
         end
     end
     
-    -- === FILTER 4: ITEM TYPES (for non-equippable items) ===
+    -- === FILTER 5: ITEM TYPES (for non-equippable items) ===
     if not isEquipment then
-        -- Check if this item type is enabled
+        -- For consumables, reagents, etc. - check if this item type is enabled
         if db.itemTypes and classID and db.itemTypes[classID] ~= nil then
             if not db.itemTypes[classID] then
-                DebugPrint("Item type not enabled:", classID, itemLink)
+                DebugPrint("Item type not enabled:", classID, "(class ID)", itemLink)
                 return false
             end
-        elseif not isEquipment and classID then
-            -- Non-equippable item with a classID not in our list - skip by default
-            -- unless it's armor/weapon class (classID 2 or 4) which are handled by equipSlots
-            if classID ~= 2 and classID ~= 4 then
-                DebugPrint("Unknown non-equip item type, skipping:", classID, itemLink)
+        elseif classID and classID ~= 2 and classID ~= 4 then
+            -- Non-equippable item with a classID not in our filter list
+            -- classID 2 = Weapon, 4 = Armor (handled by equipSlots)
+            -- If it's not in our itemTypes list, skip it unless itemTypes filter is empty/disabled
+            local hasAnyItemTypeEnabled = false
+            if db.itemTypes then
+                for typeID, enabled in pairs(db.itemTypes) do
+                    if enabled then
+                        hasAnyItemTypeEnabled = true
+                        break
+                    end
+                end
+            end
+            if hasAnyItemTypeEnabled then
+                DebugPrint("Non-equipment item type not in enabled list:", classID, itemLink)
                 return false
             end
         end
@@ -337,7 +396,7 @@ local function ShouldSellItem(bag, slot)
         return false
     end
     
-    DebugPrint("Will sell:", itemLink, "Expansion:", expansionID, "Quality:", quality, "Slot:", equipLoc or "N/A")
+    DebugPrint("Will sell:", itemLink, "Expansion:", expansionID, "Quality:", quality, "Bind:", bindStatus, "Class:", classID)
     return true, itemLink, itemCount, sellPrice * itemCount
 end
 

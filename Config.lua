@@ -86,6 +86,53 @@ local function CreateOptionsPanel()
         Settings.CreateCheckbox(category, setting, tooltip)
     end
     
+    -- ==========================================
+    -- BIND TYPE FILTERS
+    -- ==========================================
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Bind Type Filters"))
+    
+    -- Sell BoP items toggle
+    do
+        local variable = "LegacyVendor_SellBoP"
+        local name = "Sell Bind on Pickup (Soulbound)"
+        local tooltip = "Sell items that are Bind on Pickup and soulbound to you."
+        
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, LegacyVendorDB.sellBoP,
+            function() return LegacyVendorDB.sellBoP end,
+            function(value) LegacyVendorDB.sellBoP = value end)
+        
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    
+    -- Sell BoE items toggle
+    do
+        local variable = "LegacyVendor_SellBoE"
+        local name = "Sell Bind on Equip (Bound)"
+        local tooltip = "Sell items that were Bind on Equip but are now bound to you. Be careful with valuable transmog!"
+        
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, LegacyVendorDB.sellBoE,
+            function() return LegacyVendorDB.sellBoE end,
+            function(value) LegacyVendorDB.sellBoE = value end)
+        
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    
+    -- Sell Unbound items toggle
+    do
+        local variable = "LegacyVendor_SellUnbound"
+        local name = "Sell Not Bound (Food, Reagents)"
+        local tooltip = "Sell items that are not bound at all, like old food, potions, and crafting materials. Use with caution!"
+        
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, LegacyVendorDB.sellUnbound,
+            function() return LegacyVendorDB.sellUnbound end,
+            function(value) LegacyVendorDB.sellUnbound = value end)
+        
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    
     -- Max items per visit slider
     do
         local variable = "LegacyVendor_MaxSell"
@@ -305,6 +352,33 @@ local function CreateSimpleConfig()
     CreateCheckbox(content, "Debug Mode", "Show debug messages in chat",
         function() return LegacyVendorDB.debug end,
         function(v) LegacyVendorDB.debug = v end)
+    
+    yOffset = yOffset - 20
+    
+    -- ==========================================
+    -- BIND TYPE FILTERS
+    -- ==========================================
+    local headerBind = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    headerBind:SetPoint("TOPLEFT", 10, yOffset)
+    headerBind:SetText("|cFFFFD100Bind Type Filters|r")
+    yOffset = yOffset - 5
+    
+    local bindNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bindNote:SetPoint("TOPLEFT", 10, yOffset)
+    bindNote:SetText("|cFF888888Which binding types to include|r")
+    yOffset = yOffset - 20
+    
+    CreateCheckbox(content, "Sell Bind on Pickup (Soulbound)", "Sell BoP items",
+        function() return LegacyVendorDB.sellBoP end,
+        function(v) LegacyVendorDB.sellBoP = v end)
+    
+    CreateCheckbox(content, "Sell Bind on Equip (Bound)", "Sell BoE items you've equipped. Careful with transmog!",
+        function() return LegacyVendorDB.sellBoE end,
+        function(v) LegacyVendorDB.sellBoE = v end)
+    
+    CreateCheckbox(content, "Sell Not Bound (Food, Reagents)", "Sell unbound items like food, potions, reagents",
+        function() return LegacyVendorDB.sellUnbound end,
+        function(v) LegacyVendorDB.sellUnbound = v end)
     
     yOffset = yOffset - 20
     
