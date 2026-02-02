@@ -33,8 +33,7 @@ addon.RARITIES = {
     [3] = { id = 3, name = "Rare (Blue)", color = "0070dd", enabled = true },
     [4] = { id = 4, name = "Epic (Purple)", color = "a335ee", enabled = true },
     [5] = { id = 5, name = "Legendary (Orange)", color = "ff8000", enabled = false },
-    [6] = { id = 6, name = "Artifact", color = "e6cc80", enabled = false },
-    [7] = { id = 7, name = "Heirloom", color = "00ccff", enabled = false },
+    -- Note: Artifact (6) and Heirloom (7) cannot be sold, so not included
 }
 
 -- Equipment Slots (invType from GetItemInfo)
@@ -44,7 +43,6 @@ addon.EQUIP_SLOTS = {
     ["INVTYPE_SHOULDER"] = { name = "Shoulder", enabled = true },
     ["INVTYPE_BODY"] = { name = "Shirt", enabled = false },
     ["INVTYPE_CHEST"] = { name = "Chest", enabled = true },
-    ["INVTYPE_ROBE"] = { name = "Robe", enabled = true },
     ["INVTYPE_WAIST"] = { name = "Waist", enabled = true },
     ["INVTYPE_LEGS"] = { name = "Legs", enabled = true },
     ["INVTYPE_FEET"] = { name = "Feet", enabled = true },
