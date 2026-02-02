@@ -3,6 +3,13 @@
 
 local addonName, addon = ...
 
+-- Helper function to refresh button when settings change
+local function RefreshButton()
+    if addon.UpdateMerchantButton and MerchantFrame and MerchantFrame:IsShown() then
+        addon.UpdateMerchantButton()
+    end
+end
+
 -- Create options panel using the Settings API (modern WoW only)
 local function CreateOptionsPanel()
     -- Skip if Settings API not available (Classic)
@@ -25,7 +32,7 @@ local function CreateOptionsPanel()
         local setting = Settings.RegisterProxySetting(category, variable, 
             Settings.VarType.Boolean, name, LegacyVendorDB.enabled,
             function() return LegacyVendorDB.enabled end,
-            function(value) LegacyVendorDB.enabled = value end)
+            function(value) LegacyVendorDB.enabled = value; RefreshButton() end)
         
         Settings.CreateCheckbox(category, setting, tooltip)
     end
@@ -100,7 +107,7 @@ local function CreateOptionsPanel()
         local setting = Settings.RegisterProxySetting(category, variable,
             Settings.VarType.Boolean, name, LegacyVendorDB.sellBoP,
             function() return LegacyVendorDB.sellBoP end,
-            function(value) LegacyVendorDB.sellBoP = value end)
+            function(value) LegacyVendorDB.sellBoP = value; RefreshButton() end)
         
         Settings.CreateCheckbox(category, setting, tooltip)
     end
@@ -114,7 +121,7 @@ local function CreateOptionsPanel()
         local setting = Settings.RegisterProxySetting(category, variable,
             Settings.VarType.Boolean, name, LegacyVendorDB.sellBoE,
             function() return LegacyVendorDB.sellBoE end,
-            function(value) LegacyVendorDB.sellBoE = value end)
+            function(value) LegacyVendorDB.sellBoE = value; RefreshButton() end)
         
         Settings.CreateCheckbox(category, setting, tooltip)
     end
@@ -128,7 +135,7 @@ local function CreateOptionsPanel()
         local setting = Settings.RegisterProxySetting(category, variable,
             Settings.VarType.Boolean, name, LegacyVendorDB.sellUnbound,
             function() return LegacyVendorDB.sellUnbound end,
-            function(value) LegacyVendorDB.sellUnbound = value end)
+            function(value) LegacyVendorDB.sellUnbound = value; RefreshButton() end)
         
         Settings.CreateCheckbox(category, setting, tooltip)
     end
@@ -184,6 +191,7 @@ local function CreateOptionsPanel()
                     else
                         LegacyVendorDB.expansions[i] = value
                     end
+                    RefreshButton()
                 end)
             
             Settings.CreateCheckbox(category, setting, tooltip)
@@ -206,7 +214,7 @@ local function CreateOptionsPanel()
             local setting = Settings.RegisterProxySetting(category, variable,
                 Settings.VarType.Boolean, name, LegacyVendorDB.rarities[rarityID],
                 function() return LegacyVendorDB.rarities[rarityID] end,
-                function(value) LegacyVendorDB.rarities[rarityID] = value end)
+                function(value) LegacyVendorDB.rarities[rarityID] = value; RefreshButton() end)
             
             Settings.CreateCheckbox(category, setting, tooltip)
         end
@@ -238,7 +246,7 @@ local function CreateOptionsPanel()
             local setting = Settings.RegisterProxySetting(category, variable,
                 Settings.VarType.Boolean, name, LegacyVendorDB.equipSlots[slotKey],
                 function() return LegacyVendorDB.equipSlots[slotKey] end,
-                function(value) LegacyVendorDB.equipSlots[slotKey] = value end)
+                function(value) LegacyVendorDB.equipSlots[slotKey] = value; RefreshButton() end)
             
             Settings.CreateCheckbox(category, setting, tooltip)
         end
@@ -260,7 +268,7 @@ local function CreateOptionsPanel()
             local setting = Settings.RegisterProxySetting(category, variable,
                 Settings.VarType.Boolean, name, LegacyVendorDB.itemTypes[typeID],
                 function() return LegacyVendorDB.itemTypes[typeID] end,
-                function(value) LegacyVendorDB.itemTypes[typeID] = value end)
+                function(value) LegacyVendorDB.itemTypes[typeID] = value; RefreshButton() end)
             
             Settings.CreateCheckbox(category, setting, tooltip)
         end
@@ -301,7 +309,7 @@ local function CreateSimpleConfig()
     local yOffset = -10
     
     -- Helper function to create checkboxes
-    local function CreateCheckbox(parent, label, tooltip, getValue, setValue)
+    local function CreateCheckbox(parent, label, tooltip, getValue, setValue, refreshOnChange)
         local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
         cb:SetPoint("TOPLEFT", 10, yOffset)
         cb.Text:SetText(label)
@@ -310,6 +318,9 @@ local function CreateSimpleConfig()
         cb:SetChecked(getValue())
         cb:SetScript("OnClick", function(self)
             setValue(self:GetChecked())
+            if refreshOnChange then
+                RefreshButton()
+            end
         end)
         
         yOffset = yOffset - 30
@@ -325,7 +336,8 @@ local function CreateSimpleConfig()
     -- Enable checkbox
     CreateCheckbox(content, "Enable LegacyVendor", "Enable or disable automatic selling",
         function() return LegacyVendorDB.enabled end,
-        function(v) LegacyVendorDB.enabled = v end)
+        function(v) LegacyVendorDB.enabled = v end,
+        true)
     
     -- Auto-sell checkbox
     CreateCheckbox(content, "Auto-Sell Mode (may not work with API restrictions)", 
@@ -370,15 +382,18 @@ local function CreateSimpleConfig()
     
     CreateCheckbox(content, "Sell Bind on Pickup (Soulbound)", "Sell BoP items",
         function() return LegacyVendorDB.sellBoP end,
-        function(v) LegacyVendorDB.sellBoP = v end)
+        function(v) LegacyVendorDB.sellBoP = v end,
+        true)
     
     CreateCheckbox(content, "Sell Bind on Equip (Bound)", "Sell BoE items you've equipped. Careful with transmog!",
         function() return LegacyVendorDB.sellBoE end,
-        function(v) LegacyVendorDB.sellBoE = v end)
+        function(v) LegacyVendorDB.sellBoE = v end,
+        true)
     
     CreateCheckbox(content, "Sell Not Bound (Food, Reagents)", "Sell unbound items like food, potions, reagents",
         function() return LegacyVendorDB.sellUnbound end,
-        function(v) LegacyVendorDB.sellUnbound = v end)
+        function(v) LegacyVendorDB.sellUnbound = v end,
+        true)
     
     yOffset = yOffset - 20
     
