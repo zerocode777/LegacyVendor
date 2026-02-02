@@ -1,0 +1,13 @@
+## Interface: 50401
+## Title: Legacy Vendor
+## Notes: Automatically sells Bind on Pickup items from legacy expansions when visiting a vendor.
+## Author: LegacyVendor
+## Version: 1.0.0
+## SavedVariables: LegacyVendorDB
+## X-Category: Inventory
+## X-License: MIT
+## X-Website: https://www.curseforge.com/wow/addons/legacy-vendor
+
+Compat.lua
+Core.lua
+Config.lua
