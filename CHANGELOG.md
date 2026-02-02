@@ -5,6 +5,28 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-02-02
+
+### Added
+- **Bind Type Filters** - New filter category to control which binding types to sell:
+  - Bind on Pickup (Soulbound) - enabled by default
+  - Bind on Equip (Bound) - sell BoE items you've equipped
+  - Not Bound (Food, Reagents) - sell unbound items like old food, potions, crafting materials
+- Verbose logging when selling to help diagnose issues
+- Debug mode now shows detailed bind status for each item
+
+### Changed
+- Improved item type filter names for clarity:
+  - "Consumables" → "Consumables (Food/Potions)"
+  - "Reagents" → "Reagents (Crafting)"
+  - "Trade Goods" → "Trade Goods (Materials)"
+- Better handling of non-equippable items in filters
+- Filter logic now properly checks bind status before other filters
+
+### Fixed
+- Button showing item count but not selling - improved sync between scan and sell
+- Items being skipped without clear reason - added detailed debug output
+
 ## [1.0.0] - 2026-01-31
 
 ### Added
