@@ -459,6 +459,11 @@ local function SellNextItem()
         end
         itemsSoldCount = 0
         totalGoldEarned = 0
+        
+        -- Update button to reflect new count
+        if addon.UpdateMerchantButton then
+            addon.UpdateMerchantButton()
+        end
         return
     end
     
