@@ -93,6 +93,25 @@ local function CreateOptionsPanel()
         Settings.CreateCheckbox(category, setting, tooltip)
     end
     
+    -- Highlight items in bags toggle
+    do
+        local variable = "LegacyVendor_HighlightItems"
+        local name = "Highlight Sellable Items in Bags"
+        local tooltip = "Show a red glow on items in your bags that will be sold. Makes it easy to see what Legacy Vendor will sell."
+        
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, LegacyVendorDB.highlightItems,
+            function() return LegacyVendorDB.highlightItems end,
+            function(value) 
+                LegacyVendorDB.highlightItems = value
+                if addon.ScheduleHighlightUpdate then
+                    addon.ScheduleHighlightUpdate()
+                end
+            end)
+        
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    
     -- ==========================================
     -- BIND TYPE FILTERS
     -- ==========================================
@@ -364,6 +383,16 @@ local function CreateSimpleConfig()
     CreateCheckbox(content, "Debug Mode", "Show debug messages in chat",
         function() return LegacyVendorDB.debug end,
         function(v) LegacyVendorDB.debug = v end)
+    
+    -- Highlight checkbox
+    CreateCheckbox(content, "Highlight Sellable Items in Bags", "Show red glow on items that will be sold",
+        function() return LegacyVendorDB.highlightItems end,
+        function(v) 
+            LegacyVendorDB.highlightItems = v
+            if addon.ScheduleHighlightUpdate then
+                addon.ScheduleHighlightUpdate()
+            end
+        end)
     
     yOffset = yOffset - 20
     

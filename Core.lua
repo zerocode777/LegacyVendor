@@ -100,6 +100,8 @@ local defaults = {
     minItemLevel = 0,
     debug = false,
     sellDelay = 0.2, -- Delay between sells to avoid throttling
+    highlightItems = true, -- Highlight sellable items in bags
+    highlightColor = { r = 1, g = 0.2, b = 0.2, a = 0.8 }, -- Red glow by default
 }
 
 -- Initialize default expansion settings
@@ -432,6 +434,125 @@ local function ScanBags()
     return itemsToSell
 end
 
+-- ==========================================
+-- BAG ITEM HIGHLIGHTING
+-- ==========================================
+local highlightFrames = {}
+
+-- Get the item button for a bag slot
+local function GetBagSlotButton(bag, slot)
+    -- Try ContainerFrameItemButtonTemplate (Retail)
+    local containerFrame = _G["ContainerFrame" .. (bag + 1)]
+    if containerFrame then
+        local button = _G["ContainerFrame" .. (bag + 1) .. "Item" .. slot]
+        if button then return button end
+    end
+    
+    -- Try Blizzard's combined bag frame (Retail)
+    if ContainerFrameCombinedBags then
+        -- Use ContainerFrame_GetContainerFrameByContainerID for new bags
+        for i = 1, 13 do
+            local frame = _G["ContainerFrame" .. i]
+            if frame and frame:IsShown() then
+                local bagID = frame:GetBagID and frame:GetBagID()
+                if bagID == bag then
+                    -- Find the button by slot
+                    for j = 1, frame.size or 36 do
+                        local btn = frame["Item" .. j] or _G[frame:GetName() .. "Item" .. j]
+                        if btn then
+                            local btnBag, btnSlot = btn:GetBagID and btn:GetBagID(), btn:GetID and btn:GetID()
+                            if btnBag == bag and btnSlot == slot then
+                                return btn
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Fallback for older bag frames
+    local button = _G["ContainerFrame" .. (bag + 1) .. "Item" .. slot]
+    return button
+end
+
+-- Create or get highlight frame for a bag slot
+local function GetHighlightFrame(bag, slot)
+    local key = bag .. "_" .. slot
+    if highlightFrames[key] then
+        return highlightFrames[key]
+    end
+    
+    local button = GetBagSlotButton(bag, slot)
+    if not button then return nil end
+    
+    local highlight = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    highlight:SetAllPoints(button)
+    highlight:SetFrameLevel(button:GetFrameLevel() + 10)
+    
+    -- Create glow border texture
+    highlight.border = highlight:CreateTexture(nil, "OVERLAY")
+    highlight.border:SetAllPoints()
+    highlight.border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    highlight.border:SetBlendMode("ADD")
+    
+    -- Create inner glow
+    highlight.glow = highlight:CreateTexture(nil, "OVERLAY")
+    highlight.glow:SetPoint("TOPLEFT", -3, 3)
+    highlight.glow:SetPoint("BOTTOMRIGHT", 3, -3)
+    highlight.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+    highlight.glow:SetBlendMode("ADD")
+    highlight.glow:SetAlpha(0.5)
+    
+    highlight:Hide()
+    highlightFrames[key] = highlight
+    
+    return highlight
+end
+
+-- Update all bag highlights
+local function UpdateBagHighlights()
+    -- Hide all existing highlights first
+    for _, frame in pairs(highlightFrames) do
+        frame:Hide()
+    end
+    
+    if not LegacyVendorDB or not LegacyVendorDB.highlightItems or not LegacyVendorDB.enabled then
+        return
+    end
+    
+    local color = LegacyVendorDB.highlightColor or { r = 1, g = 0.2, b = 0.2, a = 0.8 }
+    
+    -- Scan and highlight items
+    for bag = 0, NUM_BAG_SLOTS do
+        local numSlots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local shouldSell = ShouldSellItem(bag, slot)
+            if shouldSell then
+                local highlight = GetHighlightFrame(bag, slot)
+                if highlight then
+                    highlight.border:SetVertexColor(color.r, color.g, color.b, color.a)
+                    highlight.glow:SetVertexColor(color.r, color.g, color.b, color.a * 0.5)
+                    highlight:Show()
+                end
+            end
+        end
+    end
+end
+
+-- Delayed update to avoid spam
+local updateTimer = nil
+local function ScheduleHighlightUpdate()
+    if updateTimer then return end
+    updateTimer = C_Timer.After(0.1, function()
+        updateTimer = nil
+        UpdateBagHighlights()
+    end)
+end
+
+addon.UpdateBagHighlights = UpdateBagHighlights
+addon.ScheduleHighlightUpdate = ScheduleHighlightUpdate
+
 -- Format gold amount
 local function FormatMoney(copper)
     if not copper or copper == 0 then return "0c" end
@@ -692,6 +813,33 @@ frame:SetScript("OnEvent", OnEvent)
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
+frame:RegisterEvent("BAG_UPDATE")
+frame:RegisterEvent("BAG_UPDATE_DELAYED")
+
+-- Additional frame for bag highlighting updates
+local bagHighlightFrame = CreateFrame("Frame")
+bagHighlightFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+bagHighlightFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+bagHighlightFrame:RegisterEvent("BAG_OPEN")
+bagHighlightFrame:RegisterEvent("BAG_CLOSED")
+bagHighlightFrame:SetScript("OnEvent", function(self, event)
+    if LegacyVendorDB and LegacyVendorDB.highlightItems then
+        addon.ScheduleHighlightUpdate()
+    end
+end)
+
+-- Hook bag frame opening for highlighting
+hooksecurefunc("OpenBag", function()
+    if LegacyVendorDB and LegacyVendorDB.highlightItems then
+        C_Timer.After(0.1, UpdateBagHighlights)
+    end
+end)
+
+hooksecurefunc("OpenAllBags", function()
+    if LegacyVendorDB and LegacyVendorDB.highlightItems then
+        C_Timer.After(0.1, UpdateBagHighlights)
+    end
+end)
 
 -- Slash commands
 SLASH_LEGACYVENDOR1 = "/legacyvendor"
@@ -710,12 +858,14 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv exclude - Exclude item you're hovering over")
         Print("  /lv expansions - List expansion filter settings")
         Print("  /lv minimap - Toggle minimap button")
+        Print("  /lv highlight - Toggle bag highlighting")
         Print("  /lv reset - Reset settings to default")
         Print("  /lv debug - Toggle debug mode")
         
     elseif msg == "toggle" then
         LegacyVendorDB.enabled = not LegacyVendorDB.enabled
         Print("Addon " .. (LegacyVendorDB.enabled and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+        addon.ScheduleHighlightUpdate()
         
     elseif msg == "auto" then
         LegacyVendorDB.autoSell = not LegacyVendorDB.autoSell
@@ -779,6 +929,11 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+        
+    elseif msg == "highlight" then
+        LegacyVendorDB.highlightItems = not LegacyVendorDB.highlightItems
+        Print("Bag highlighting " .. (LegacyVendorDB.highlightItems and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+        addon.ScheduleHighlightUpdate()
         
     elseif msg:match("^exp%s*(%d+)$") then
         local expID = tonumber(msg:match("^exp%s*(%d+)$"))
