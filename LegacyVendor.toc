@@ -1,4 +1,4 @@
-## Interface: 120000
+## Interface: 120100
 ## Title: Legacy Vendor
 ## Notes: Automatically sells Bind on Pickup items from legacy expansions when visiting a vendor.
 ## Author: LegacyVendor
