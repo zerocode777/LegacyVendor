@@ -5,6 +5,47 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-02
+
+### Added
+- **Bag Item Highlighting** - Sellable items now glow red in your bags when enabled
+- New `/lv highlight` slash command to toggle highlighting
+- Highlight toggle in settings panel
+- Automatic highlight refresh when bags change or filters are modified
+
+### Changed
+- Improved visual feedback for items that would be sold
+
+## [1.1.4] - 2026-02-02
+
+### Added
+- **MoP Remix/Classic Support** - Added LegacyVendor_Mists.toc for Mists of Pandaria Classic (Interface 50401)
+
+### Fixed
+- Now supports 5 WoW versions: Retail, MoP Classic, Cata Classic, TBC Anniversary, Classic Era
+
+## [1.1.3] - 2026-02-02
+
+### Fixed
+- Fixed Retail interface version from 120100 to 120000 for compatibility
+
+## [1.1.2] - 2026-02-02
+
+### Added
+- **TBC Anniversary Support** - Added LegacyVendor_TBC.toc for TBC Anniversary servers (Interface 20504)
+- **Classic Era Support** - Added LegacyVendor_Vanilla.toc for Classic Era (Interface 11505)
+
+### Changed
+- Renamed LegacyVendor_Classic.toc to LegacyVendor_Cata.toc for clarity
+
+## [1.1.1] - 2026-02-02
+
+### Fixed
+- Removed invalid filter options:
+  - Artifact rarity (cannot be sold)
+  - Heirloom rarity (cannot be sold)
+  - Robe slot (not a valid equipment slot, use Chest instead)
+
 ## [1.1.0] - 2026-02-02
 
 ### Added
