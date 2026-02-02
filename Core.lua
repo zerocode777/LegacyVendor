@@ -398,7 +398,7 @@ local function SellNextItem()
         if itemsSoldCount > 0 and LegacyVendorDB.showSummary then
             Print(string.format("Sold %d legacy item(s) for %s", itemsSoldCount, FormatMoney(totalGoldEarned)))
         elseif itemsSoldCount == 0 and LegacyVendorDB.showSummary then
-            DebugPrint("No items were sold (may have been moved or API throttled)")
+            Print("No items were sold - items may have been moved or filters changed")
         end
         itemsSoldCount = 0
         totalGoldEarned = 0
@@ -413,10 +413,12 @@ local function SellNextItem()
     end
     
     local item = table.remove(itemsToSell, 1)
+    Print(string.format("Attempting to sell: %s (bag %d, slot %d)", item.link or "Unknown", item.bag, item.slot))
     
     -- Verify item is still there (using modern API)
     local containerInfo = C_Container.GetContainerItemInfo(item.bag, item.slot)
     if containerInfo and containerInfo.hyperlink then
+        Print("  Item verified in slot, selling...")
         -- Use the container API for selling
         -- This works when merchant window is open
         local success, err = pcall(function()
@@ -425,12 +427,12 @@ local function SellNextItem()
         
         if success then
             itemsSoldCount = itemsSoldCount + 1
-            DebugPrint("Sold:", item.link)
+            Print("  Sold successfully!")
         else
-            DebugPrint("Failed to sell:", item.link, err or "unknown error")
+            Print("  FAILED to sell: " .. (err or "unknown error"))
         end
     else
-        DebugPrint("Item no longer in slot:", item.bag, item.slot)
+        Print("  Item no longer in slot, skipping")
     end
     
     -- Schedule next sell with delay to avoid API throttling
@@ -444,9 +446,21 @@ local function StartSelling()
     
     ScanBags()
     
+    Print(string.format("Starting sell: found %d items", #itemsToSell))
+    
     if #itemsToSell == 0 then
-        DebugPrint("No legacy items to sell")
+        Print("No legacy items to sell - check your filter settings with /lv debug")
         return
+    end
+    
+    -- List items that will be sold
+    for i, item in ipairs(itemsToSell) do
+        if i <= 5 then
+            Print(string.format("  %d. %s", i, item.link or "Unknown"))
+        end
+    end
+    if #itemsToSell > 5 then
+        Print(string.format("  ... and %d more", #itemsToSell - 5))
     end
     
     if LegacyVendorDB.confirmSell then
