@@ -1,5 +1,5 @@
 -- LegacyVendor Compatibility Layer
--- Handles API differences between Retail, Classic, MoP Classic, etc.
+-- Handles API differences between Retail, Classic, Cata Classic, TBC Classic, etc.
 
 local addonName, addon = ...
 
@@ -9,6 +9,7 @@ addon.isRetail = tocVersion >= 100000
 addon.isMoP = tocVersion >= 50000 and tocVersion < 60000
 addon.isCata = tocVersion >= 40000 and tocVersion < 50000
 addon.isWrath = tocVersion >= 30000 and tocVersion < 40000
+addon.isTBC = tocVersion >= 20000 and tocVersion < 30000
 addon.isClassicEra = tocVersion < 20000
 addon.isClassic = not addon.isRetail
 
@@ -17,18 +18,22 @@ if addon.isClassicEra then
     -- Classic Era only has Vanilla
     addon.MAX_EXPANSION = 0
     addon.CURRENT_EXPANSION = 0
-elseif addon.isMoP then
-    -- MoP Classic
-    addon.MAX_EXPANSION = 4
-    addon.CURRENT_EXPANSION = 4
-elseif addon.isCata then
-    -- Cataclysm Classic (legacy)
-    addon.MAX_EXPANSION = 3
-    addon.CURRENT_EXPANSION = 3
+elseif addon.isTBC then
+    -- TBC Classic Anniversary
+    addon.MAX_EXPANSION = 1
+    addon.CURRENT_EXPANSION = 1
 elseif addon.isWrath then
     -- WotLK Classic (if still exists)
     addon.MAX_EXPANSION = 2
     addon.CURRENT_EXPANSION = 2
+elseif addon.isCata then
+    -- Cataclysm Classic
+    addon.MAX_EXPANSION = 3
+    addon.CURRENT_EXPANSION = 3
+elseif addon.isMoP then
+    -- MoP Classic (future)
+    addon.MAX_EXPANSION = 4
+    addon.CURRENT_EXPANSION = 4
 else
     -- Retail - Midnight
     addon.MAX_EXPANSION = 11
