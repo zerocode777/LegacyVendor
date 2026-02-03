@@ -922,11 +922,11 @@ local function CreateMinimapButton()
     highlight:SetBlendMode("ADD")
     highlight:SetPoint("CENTER", 0, 1)
     
-    -- Position button around minimap
+    -- Position button around minimap (radius 104 places it on the outside edge)
     local function UpdatePosition()
         local angle = math.rad(LegacyVendorDB.minimapButton.minimapPos or 220)
-        local x = math.cos(angle) * 80
-        local y = math.sin(angle) * 80
+        local x = math.cos(angle) * 104
+        local y = math.sin(angle) * 104
         button:ClearAllPoints()
         button:SetPoint("CENTER", Minimap, "CENTER", x, y)
     end
