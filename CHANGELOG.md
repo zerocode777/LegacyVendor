@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Minimap button is now clamped to screen to prevent it from going off-screen
 
+### Fixed
+- Fixed infinite loop crash in minimap shape detection (caused "script ran too long" error)
+- Fixed `/lv minimap` command error when button settings weren't initialized
+
 ## [1.2.3] - 2026-02-03
 
 ### Changed

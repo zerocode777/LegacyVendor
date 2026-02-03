@@ -832,29 +832,35 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("Use '/lv exp <number>' to toggle an expansion.")
         
     elseif msg == "minimap" then
-        if LegacyVendorDB.minimapButton then
-            LegacyVendorDB.minimapButton.hide = not LegacyVendorDB.minimapButton.hide
-            if LegacyVendorDB.minimapButton.hide then
+        if not LegacyVendorDB.minimapButton then
+            LegacyVendorDB.minimapButton = { hide = false, minimapPos = 220, freeform = false }
+        end
+        LegacyVendorDB.minimapButton.hide = not LegacyVendorDB.minimapButton.hide
+        if LegacyVendorDB.minimapButton.hide then
+            if addon.minimapButton then
                 addon.minimapButton:Hide()
-                Print("Minimap button hidden. Use /lv minimap to show.")
-            else
-                addon.minimapButton:Show()
-                Print("Minimap button shown.")
             end
+            Print("Minimap button hidden. Use /lv minimap to show.")
+        else
+            if addon.minimapButton then
+                addon.minimapButton:Show()
+            end
+            Print("Minimap button shown.")
         end
         
     elseif msg == "resetbutton" then
-        if LegacyVendorDB.minimapButton then
-            -- Reset to default minimap-attached position
-            LegacyVendorDB.minimapButton.freeform = false
-            LegacyVendorDB.minimapButton.minimapPos = 220
-            LegacyVendorDB.minimapButton.freeformX = nil
-            LegacyVendorDB.minimapButton.freeformY = nil
-            if addon.minimapButton and addon.minimapButton.UpdatePosition then
-                addon.minimapButton.UpdatePosition()
-            end
-            Print("Minimap button reset to default position around minimap.")
+        if not LegacyVendorDB.minimapButton then
+            LegacyVendorDB.minimapButton = { hide = false, minimapPos = 220, freeform = false }
         end
+        -- Reset to default minimap-attached position
+        LegacyVendorDB.minimapButton.freeform = false
+        LegacyVendorDB.minimapButton.minimapPos = 220
+        LegacyVendorDB.minimapButton.freeformX = nil
+        LegacyVendorDB.minimapButton.freeformY = nil
+        if addon.minimapButton and addon.minimapButton.UpdatePosition then
+            addon.minimapButton.UpdatePosition()
+        end
+        Print("Minimap button reset to default position around minimap.")
         
     elseif msg == "button" then
         -- Force show button in center of screen for debugging
@@ -897,10 +903,10 @@ end
 -- Minimap shape detection for compatibility with minimap addons
 -- Many minimap addons (SexyMap, BasicMinimap, etc.) set GetMinimapShape() 
 -- to indicate if the minimap is square or has different shapes
-local function GetMinimapShape()
-    -- Check if a minimap addon has defined a custom shape function
-    if GetMinimapShape then
-        return GetMinimapShape()
+local function GetMinimapShapeCompat()
+    -- Check if a minimap addon has defined a custom shape function (global)
+    if _G.GetMinimapShape then
+        return _G.GetMinimapShape()
     end
     -- Default to circular (ROUND)
     return "ROUND"
@@ -909,7 +915,7 @@ end
 -- Calculate the radius for button positioning based on minimap shape and size
 -- For square minimaps, we need different radius at corners vs edges
 local function GetMinimapRadius(angle)
-    local shape = GetMinimapShape()
+    local shape = GetMinimapShapeCompat()
     
     -- Get the actual minimap dimensions (handles resized minimaps)
     local width = Minimap:GetWidth() / 2
