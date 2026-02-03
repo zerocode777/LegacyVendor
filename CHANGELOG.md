@@ -5,6 +5,12 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-02-03
+
+### Fixed
+- Fixed infinite loop crash in minimap shape detection (caused "script ran too long" error)
+- Fixed `/lv minimap` command error when button settings weren't initialized
+
 ## [1.2.4] - 2026-02-03
 
 ### Added
@@ -15,10 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Minimap button is now clamped to screen to prevent it from going off-screen
-
-### Fixed
-- Fixed infinite loop crash in minimap shape detection (caused "script ran too long" error)
-- Fixed `/lv minimap` command error when button settings weren't initialized
 
 ## [1.2.3] - 2026-02-03
 
