@@ -5,6 +5,17 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-02-03
+
+### Added
+- **Freeform minimap button positioning** - Shift+Drag the button to place it anywhere on screen
+- Works with all minimap addons regardless of shape (square, circular, resized)
+- New `/lv resetbutton` command to reset button back to default minimap-attached position
+- Button now shows current position mode in tooltip (Freeform or Minimap-attached)
+
+### Changed
+- Minimap button is now clamped to screen to prevent it from going off-screen
+
 ## [1.2.3] - 2026-02-03
 
 ### Changed

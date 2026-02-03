@@ -731,6 +731,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv exclude - Exclude item you're hovering over")
         Print("  /lv expansions - List expansion filter settings")
         Print("  /lv minimap - Toggle minimap button")
+        Print("  /lv resetbutton - Reset minimap button to default position")
         Print("  /lv highlight - Toggle bag highlighting")
         Print("  /lv reset - Reset settings to default")
         Print("  /lv debug - Toggle debug mode")
@@ -842,6 +843,19 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
             end
         end
         
+    elseif msg == "resetbutton" then
+        if LegacyVendorDB.minimapButton then
+            -- Reset to default minimap-attached position
+            LegacyVendorDB.minimapButton.freeform = false
+            LegacyVendorDB.minimapButton.minimapPos = 220
+            LegacyVendorDB.minimapButton.freeformX = nil
+            LegacyVendorDB.minimapButton.freeformY = nil
+            if addon.minimapButton and addon.minimapButton.UpdatePosition then
+                addon.minimapButton.UpdatePosition()
+            end
+            Print("Minimap button reset to default position around minimap.")
+        end
+        
     elseif msg == "button" then
         -- Force show button in center of screen for debugging
         if not addon.sellButton then
@@ -879,21 +893,85 @@ end
 -- ==========================================
 -- MINIMAP BUTTON
 -- ==========================================
+
+-- Minimap shape detection for compatibility with minimap addons
+-- Many minimap addons (SexyMap, BasicMinimap, etc.) set GetMinimapShape() 
+-- to indicate if the minimap is square or has different shapes
+local function GetMinimapShape()
+    -- Check if a minimap addon has defined a custom shape function
+    if GetMinimapShape then
+        return GetMinimapShape()
+    end
+    -- Default to circular (ROUND)
+    return "ROUND"
+end
+
+-- Calculate the radius for button positioning based on minimap shape and size
+-- For square minimaps, we need different radius at corners vs edges
+local function GetMinimapRadius(angle)
+    local shape = GetMinimapShape()
+    
+    -- Get the actual minimap dimensions (handles resized minimaps)
+    local width = Minimap:GetWidth() / 2
+    local height = Minimap:GetHeight() / 2
+    
+    -- For circular minimap, use the standard radius
+    if shape == "ROUND" then
+        -- Use the smaller dimension + offset for circular minimaps
+        return math.min(width, height) + 10
+    end
+    
+    -- For square minimaps (SQUARE shape from addons like SexyMap, BasicMinimap)
+    if shape == "SQUARE" then
+        -- Calculate radius to always be on the square edge
+        -- For a square, the distance to edge varies by angle
+        local rad = math.rad(angle)
+        local cos_a = math.abs(math.cos(rad))
+        local sin_a = math.abs(math.sin(rad))
+        
+        -- Calculate the distance to the square edge at this angle
+        local radius
+        if cos_a > sin_a then
+            radius = width / cos_a
+        else
+            radius = height / sin_a
+        end
+        
+        -- Add small offset to place button just outside the edge
+        return radius + 6
+    end
+    
+    -- For other shapes (CORNER-TOPLEFT, etc.), fall back to circular
+    -- but adjust for minimap size
+    return math.min(width, height) + 10
+end
+
 local function CreateMinimapButton()
     -- Default minimap button settings
     if not LegacyVendorDB.minimapButton then
         LegacyVendorDB.minimapButton = {
             hide = false,
-            minimapPos = 220, -- angle around minimap
+            minimapPos = 220, -- angle around minimap (used in circular mode)
+            freeform = false, -- freeform positioning mode (drag anywhere)
+            freeformX = nil,  -- screen X position (freeform mode)
+            freeformY = nil,  -- screen Y position (freeform mode)
         }
     end
     
-    local button = CreateFrame("Button", "LegacyVendorMinimapButton", Minimap)
+    -- Upgrade existing settings if freeform fields don't exist
+    if LegacyVendorDB.minimapButton.freeform == nil then
+        LegacyVendorDB.minimapButton.freeform = false
+        LegacyVendorDB.minimapButton.freeformX = nil
+        LegacyVendorDB.minimapButton.freeformY = nil
+    end
+    
+    local button = CreateFrame("Button", "LegacyVendorMinimapButton", UIParent)
     button:SetSize(32, 32)
     button:SetFrameStrata("MEDIUM")
     button:SetFrameLevel(8)
     button:EnableMouse(true)
     button:SetMovable(true)
+    button:SetClampedToScreen(true) -- Prevent button from going off-screen
     button:RegisterForClicks("AnyUp")
     button:RegisterForDrag("LeftButton")
     
@@ -922,37 +1000,90 @@ local function CreateMinimapButton()
     highlight:SetBlendMode("ADD")
     highlight:SetPoint("CENTER", 0, 1)
     
-    -- Position button around minimap (radius 104 places it on the outside edge)
+    -- Position button around minimap (adapts to minimap shape and size)
+    -- Or use freeform positioning if enabled
     local function UpdatePosition()
-        local angle = math.rad(LegacyVendorDB.minimapButton.minimapPos or 220)
-        local x = math.cos(angle) * 104
-        local y = math.sin(angle) * 104
-        button:ClearAllPoints()
-        button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+        if LegacyVendorDB.minimapButton.freeform then
+            -- Freeform mode: position anywhere on screen
+            local x = LegacyVendorDB.minimapButton.freeformX
+            local y = LegacyVendorDB.minimapButton.freeformY
+            if x and y then
+                button:ClearAllPoints()
+                button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+            else
+                -- Default freeform position near minimap
+                button:ClearAllPoints()
+                button:SetPoint("CENTER", Minimap, "CENTER", -60, -60)
+            end
+        else
+            -- Circular/minimap-attached mode
+            local angle = LegacyVendorDB.minimapButton.minimapPos or 220
+            local radius = GetMinimapRadius(angle)
+            local rad = math.rad(angle)
+            local x = math.cos(rad) * radius
+            local y = math.sin(rad) * radius
+            button:ClearAllPoints()
+            button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+        end
     end
     
+    -- Store UpdatePosition for external access (minimap addon compatibility)
+    button.UpdatePosition = UpdatePosition
+    
     -- Dragging functionality
+    -- Shift+Drag to toggle between freeform and circular mode
+    -- Regular drag moves the button in current mode
     local isDragging = false
+    local dragMode = nil -- "freeform" or "circular"
+    
     button:SetScript("OnDragStart", function(self)
         isDragging = true
         self:LockHighlight()
+        
+        -- Check if Shift is held to enter/stay in freeform mode
+        if IsShiftKeyDown() then
+            dragMode = "freeform"
+            LegacyVendorDB.minimapButton.freeform = true
+            self:StartMoving()
+        elseif LegacyVendorDB.minimapButton.freeform then
+            -- Already in freeform mode, continue freeform drag
+            dragMode = "freeform"
+            self:StartMoving()
+        else
+            -- Circular mode drag
+            dragMode = "circular"
+        end
     end)
     
     button:SetScript("OnDragStop", function(self)
         isDragging = false
         self:UnlockHighlight()
-        -- Calculate new angle based on cursor position
-        local mx, my = Minimap:GetCenter()
-        local cx, cy = GetCursorPosition()
-        local scale = Minimap:GetEffectiveScale()
-        cx, cy = cx / scale, cy / scale
-        local angle = math.deg(math.atan2(cy - my, cx - mx))
-        LegacyVendorDB.minimapButton.minimapPos = angle
-        UpdatePosition()
+        
+        if dragMode == "freeform" then
+            self:StopMovingOrSizing()
+            -- Save the freeform position
+            local scale = UIParent:GetEffectiveScale()
+            local x, y = self:GetCenter()
+            LegacyVendorDB.minimapButton.freeformX = x
+            LegacyVendorDB.minimapButton.freeformY = y
+        else
+            -- Circular mode: Calculate new angle based on cursor position
+            local mx, my = Minimap:GetCenter()
+            local cx, cy = GetCursorPosition()
+            local scale = Minimap:GetEffectiveScale()
+            cx, cy = cx / scale, cy / scale
+            local angle = math.deg(math.atan2(cy - my, cx - mx))
+            LegacyVendorDB.minimapButton.minimapPos = angle
+            UpdatePosition()
+        end
+        
+        dragMode = nil
     end)
     
     button:SetScript("OnUpdate", function(self)
-        if isDragging then
+        if isDragging and dragMode == "circular" then
+            -- Only update position in circular mode
+            -- Freeform mode uses StartMoving/StopMoving
             local mx, my = Minimap:GetCenter()
             local cx, cy = GetCursorPosition()
             local scale = Minimap:GetEffectiveScale()
@@ -962,6 +1093,19 @@ local function CreateMinimapButton()
             UpdatePosition()
         end
     end)
+    
+    -- Update position when minimap size changes (for minimap addons that resize)
+    button:SetScript("OnSizeChanged", function()
+        if not isDragging then
+            UpdatePosition()
+        end
+    end)
+    
+    -- Also update when the minimap itself changes size
+    if Minimap.RegisterCallback then
+        -- Some minimap addons provide callbacks
+        Minimap:RegisterCallback("OnSizeChanged", UpdatePosition)
+    end
     
     -- Click handlers
     button:SetScript("OnClick", function(self, btn)
@@ -985,9 +1129,13 @@ local function CreateMinimapButton()
         GameTooltip:AddLine("|cFF00FF00Left-Click:|r Open Settings", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("|cFF00FF00Right-Click:|r Toggle Enable/Disable", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("|cFF00FF00Drag:|r Move Button", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("|cFF00FF00Shift+Drag:|r Freeform Position (anywhere)", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("|cFF00FF00/lv resetbutton:|r Reset to minimap", 0.8, 0.8, 0.8)
         GameTooltip:AddLine(" ")
         local status = LegacyVendorDB.enabled and "|cFF00FF00Enabled|r" or "|cFFFF0000Disabled|r"
         GameTooltip:AddLine("Status: " .. status, 0.7, 0.7, 0.7)
+        local posMode = LegacyVendorDB.minimapButton.freeform and "Freeform" or "Minimap-attached"
+        GameTooltip:AddLine("Position Mode: " .. posMode, 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     
@@ -1004,6 +1152,16 @@ local function CreateMinimapButton()
     end
     
     addon.minimapButton = button
+    
+    -- Hook Minimap:SetSize to update position when minimap addons resize
+    hooksecurefunc(Minimap, "SetSize", function()
+        C_Timer.After(0.1, function()
+            if addon.minimapButton and addon.minimapButton.UpdatePosition then
+                addon.minimapButton.UpdatePosition()
+            end
+        end)
+    end)
+    
     return button
 end
 
