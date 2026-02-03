@@ -486,7 +486,8 @@ local function GetHighlightFrame(bag, slot)
     local button = GetBagSlotButton(bag, slot)
     if not button then return nil end
     
-    local highlight = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    -- BackdropTemplate may not exist in Classic, so create frame without it
+    local highlight = CreateFrame("Frame", nil, button)
     highlight:SetAllPoints(button)
     highlight:SetFrameLevel(button:GetFrameLevel() + 10)
     
@@ -819,27 +820,32 @@ frame:RegisterEvent("BAG_UPDATE_DELAYED")
 -- Additional frame for bag highlighting updates
 local bagHighlightFrame = CreateFrame("Frame")
 bagHighlightFrame:RegisterEvent("BAG_UPDATE_DELAYED")
-bagHighlightFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
-bagHighlightFrame:RegisterEvent("BAG_OPEN")
-bagHighlightFrame:RegisterEvent("BAG_CLOSED")
+-- Safely register events that may not exist in all versions
+pcall(function() bagHighlightFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED") end)
+pcall(function() bagHighlightFrame:RegisterEvent("BAG_OPEN") end)
+pcall(function() bagHighlightFrame:RegisterEvent("BAG_CLOSED") end)
 bagHighlightFrame:SetScript("OnEvent", function(self, event)
     if LegacyVendorDB and LegacyVendorDB.highlightItems then
         addon.ScheduleHighlightUpdate()
     end
 end)
 
--- Hook bag frame opening for highlighting
-hooksecurefunc("OpenBag", function()
-    if LegacyVendorDB and LegacyVendorDB.highlightItems then
-        C_Timer.After(0.1, UpdateBagHighlights)
-    end
-end)
+-- Hook bag frame opening for highlighting (protected in case these don't exist)
+if OpenBag then
+    hooksecurefunc("OpenBag", function()
+        if LegacyVendorDB and LegacyVendorDB.highlightItems then
+            C_Timer.After(0.1, UpdateBagHighlights)
+        end
+    end)
+end
 
-hooksecurefunc("OpenAllBags", function()
-    if LegacyVendorDB and LegacyVendorDB.highlightItems then
-        C_Timer.After(0.1, UpdateBagHighlights)
-    end
-end)
+if OpenAllBags then
+    hooksecurefunc("OpenAllBags", function()
+        if LegacyVendorDB and LegacyVendorDB.highlightItems then
+            C_Timer.After(0.1, UpdateBagHighlights)
+        end
+    end)
+end
 
 -- Slash commands
 SLASH_LEGACYVENDOR1 = "/legacyvendor"
