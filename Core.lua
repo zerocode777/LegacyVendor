@@ -527,6 +527,16 @@ local function StartSelling()
     
     ScanBags()
     
+    -- Update button to reflect actual scan result
+    if addon.sellButton then
+        addon.sellButton:SetText(string.format("Sell (%d)", #itemsToSell))
+        if #itemsToSell > 0 then
+            addon.sellButton:Enable()
+        else
+            addon.sellButton:Disable()
+        end
+    end
+    
     Print(string.format("Starting sell: found %d items", #itemsToSell))
     
     if #itemsToSell == 0 then
