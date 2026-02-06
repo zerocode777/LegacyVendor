@@ -112,6 +112,20 @@ local function CreateOptionsPanel()
         Settings.CreateCheckbox(category, setting, tooltip)
     end
     
+    -- Only sell items lower ilvl than equipped toggle
+    do
+        local variable = "LegacyVendor_OnlySellLowerIlvl"
+        local name = "Only Sell Lower Item Level"
+        local tooltip = "When enabled, equippable items will only be sold if their item level is lower than what you currently have equipped in the same slot. Items without a slot are not affected."
+        
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, LegacyVendorDB.onlySellLowerIlvl,
+            function() return LegacyVendorDB.onlySellLowerIlvl end,
+            function(value) LegacyVendorDB.onlySellLowerIlvl = value; RefreshButton() end)
+        
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    
     -- ==========================================
     -- BIND TYPE FILTERS
     -- ==========================================

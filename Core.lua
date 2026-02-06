@@ -62,6 +62,34 @@ addon.EQUIP_SLOTS = {
     ["INVTYPE_TABARD"] = { name = "Tabard", enabled = false },
 }
 
+-- Mapping from equipLoc to inventory slot IDs for GetInventoryItemLink
+-- Some slots map to two IDs (e.g. rings, trinkets, weapons)
+addon.EQUIP_LOC_TO_SLOT = {
+    ["INVTYPE_HEAD"]           = { 1 },
+    ["INVTYPE_NECK"]           = { 2 },
+    ["INVTYPE_SHOULDER"]       = { 3 },
+    ["INVTYPE_BODY"]           = { 4 },
+    ["INVTYPE_CHEST"]          = { 5 },
+    ["INVTYPE_ROBE"]           = { 5 },
+    ["INVTYPE_WAIST"]          = { 6 },
+    ["INVTYPE_LEGS"]           = { 7 },
+    ["INVTYPE_FEET"]           = { 8 },
+    ["INVTYPE_WRIST"]          = { 9 },
+    ["INVTYPE_HAND"]           = { 10 },
+    ["INVTYPE_FINGER"]         = { 11, 12 },
+    ["INVTYPE_TRINKET"]        = { 13, 14 },
+    ["INVTYPE_CLOAK"]          = { 15 },
+    ["INVTYPE_WEAPON"]         = { 16, 17 },
+    ["INVTYPE_SHIELD"]         = { 17 },
+    ["INVTYPE_2HWEAPON"]       = { 16 },
+    ["INVTYPE_WEAPONMAINHAND"] = { 16 },
+    ["INVTYPE_WEAPONOFFHAND"]  = { 17 },
+    ["INVTYPE_HOLDABLE"]       = { 17 },
+    ["INVTYPE_RANGED"]         = { 18 },
+    ["INVTYPE_RANGEDRIGHT"]    = { 18 },
+    ["INVTYPE_TABARD"]         = { 19 },
+}
+
 -- Non-Equippable Item Types (classID from GetItemInfoInstant)
 addon.ITEM_TYPES = {
     [0] = { name = "Consumables (Food/Potions)", enabled = false },  -- Consumable
@@ -102,6 +130,7 @@ local defaults = {
     sellDelay = 0.2, -- Delay between sells to avoid throttling
     highlightItems = true, -- Highlight sellable items in bags
     highlightColor = { r = 1, g = 0.2, b = 0.2, a = 0.8 }, -- Red glow by default
+    onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
 }
 
 -- Initialize default expansion settings
@@ -394,6 +423,40 @@ local function ShouldSellItem(bag, slot)
     if itemLevel < db.minItemLevel then
         DebugPrint("Below min item level:", itemLink)
         return false
+    end
+
+    -- === FILTER 6: ONLY SELL IF LOWER ILVL THAN EQUIPPED ===
+    if db.onlySellLowerIlvl and isEquipment then
+        local slotIDs = addon.EQUIP_LOC_TO_SLOT[equipLoc]
+        if slotIDs then
+            local dominated = false
+            for _, invSlotID in ipairs(slotIDs) do
+                local equippedLink = GetInventoryItemLink("player", invSlotID)
+                if equippedLink then
+                    local equippedIlvl
+                    if GetDetailedItemLevelInfo then
+                        equippedIlvl = GetDetailedItemLevelInfo(equippedLink)
+                    end
+                    if not equippedIlvl then
+                        -- Fallback: parse from GetItemInfo
+                        local eInfo = { GetItemInfo(equippedLink) }
+                        equippedIlvl = eInfo[4] or 0
+                    end
+                    if itemLevel < equippedIlvl then
+                        dominated = true
+                        break
+                    end
+                else
+                    -- Nothing equipped in this slot; bag item is better by default
+                    dominated = false
+                    break
+                end
+            end
+            if not dominated then
+                DebugPrint("Item level not lower than equipped, skipping:", itemLink, "(", itemLevel, ")")
+                return false
+            end
+        end
     end
     
     DebugPrint("Will sell:", itemLink, "Expansion:", expansionID, "Quality:", quality, "Bind:", bindStatus, "Class:", classID)

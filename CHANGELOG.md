@@ -5,6 +5,11 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2026-02-06
+
+### Added
+- **Only Sell Lower Item Level filter** - New toggle that only sells equippable items whose item level is lower than the currently equipped item in the same slot. Non-equippable items are unaffected. Disabled by default.
+
 ## [1.2.6] - 2026-02-04
 
 ### Fixed
