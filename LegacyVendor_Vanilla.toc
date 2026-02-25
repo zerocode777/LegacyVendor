@@ -1,8 +1,8 @@
-## Interface: 11505
+## Interface: 11508
 ## Title: Legacy Vendor
 ## Notes: Automatically sells Bind on Pickup items from legacy expansions when visiting a vendor.
 ## Author: LegacyVendor
-## Version: 1.0.0
+## Version: 1.2.8
 ## SavedVariables: LegacyVendorDB
 ## X-Category: Inventory
 ## X-License: MIT

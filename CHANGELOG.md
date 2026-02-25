@@ -5,6 +5,17 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.8] - 2026-02-25
+
+### Changed
+- Updated Retail interface version to 120001 (Patch 12.0.1 - Midnight pre-patch)
+- Updated Classic Era interface version to 11508 (Patch 1.15.8)
+- Updated TBC Anniversary interface version to 20505 (Patch 2.5.5)
+- Updated MoP Classic interface version to 50503 (Patch 5.5.3)
+
+### Removed
+- Removed Cata Classic TOC (Cata Classic no longer exists)
+
 ## [1.2.7] - 2026-02-06
 
 ### Added
