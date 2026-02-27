@@ -196,7 +196,6 @@ local function CreateOptionsPanel()
     
     -- Get max expansion for this version
     local maxExpansion = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION
-    local currentExpansion = addon.CURRENT_EXPANSION
     
     -- Create toggles for each expansion (only show expansions that exist in this WoW version)
     for i = 0, maxExpansion do
@@ -204,26 +203,13 @@ local function CreateOptionsPanel()
         if exp then
             local variable = "LegacyVendor_Exp" .. i
             local name = exp.name .. " (" .. exp.short .. ")"
-            local tooltip
-            
-            if i >= currentExpansion then
-                tooltip = "Current expansion - selling is disabled for protection."
-                name = name .. " |cFFFF0000[Protected]|r"
-            else
-                tooltip = "Enable selling of Bind on Pickup items from " .. exp.name .. "."
-            end
+            local tooltip = "Enable selling of Bind on Pickup items from " .. exp.name .. "."
             
             local setting = Settings.RegisterProxySetting(category, variable,
                 Settings.VarType.Boolean, name, LegacyVendorDB.expansions[i],
                 function() return LegacyVendorDB.expansions[i] end,
                 function(value)
-                    -- Protect current expansion
-                    if i >= currentExpansion then
-                        LegacyVendorDB.expansions[i] = false
-                        addon.Print("Cannot enable selling for current expansion items.")
-                    else
-                        LegacyVendorDB.expansions[i] = value
-                    end
+                    LegacyVendorDB.expansions[i] = value
                     RefreshButton()
                 end)
             
@@ -455,33 +441,18 @@ local function CreateSimpleConfig()
     
     -- Get max expansion for this WoW version
     local maxExpansion = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION
-    local currentExpansion = addon.CURRENT_EXPANSION
     
     -- Create expansion checkboxes (only show expansions that exist in this WoW version)
     for i = 0, maxExpansion do
         local exp = addon.EXPANSIONS[i]
         if exp then
             local label = exp.name
-            local isProtected = i >= currentExpansion
-            
-            if isProtected then
-                label = label .. " |cFFFF0000[Protected]|r"
-            end
-            
             local cb = CreateCheckbox(content, label, 
-                isProtected and "Current expansion items are protected" or "Sell BoP items from " .. exp.name,
+                "Sell BoP items from " .. exp.name,
                 function() return LegacyVendorDB.expansions[i] end,
                 function(v)
-                    if isProtected then
-                        LegacyVendorDB.expansions[i] = false
-                    else
-                        LegacyVendorDB.expansions[i] = v
-                    end
+                    LegacyVendorDB.expansions[i] = v
                 end)
-            
-            if isProtected then
-                cb:Disable()
-            end
         end
     end
     

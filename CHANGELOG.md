@@ -5,6 +5,15 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-02-27
+
+### Changed
+- Midnight expansion items can now be sold like any other expansion (no longer force-protected)
+- All expansion filters are now user-controlled with no hardcoded restrictions
+
+### Removed
+- Removed "current expansion" protection system - users can now choose to sell items from any expansion
+
 ## [1.2.9] - 2026-02-27
 
 ### Changed

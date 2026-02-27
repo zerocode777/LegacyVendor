@@ -17,7 +17,7 @@ addon.EXPANSIONS = {
     [8] = { id = 8, name = "Shadowlands", short = "SL", enabled = false },
     [9] = { id = 9, name = "Dragonflight", short = "DF", enabled = false },
     [10] = { id = 10, name = "The War Within", short = "TWW", enabled = false },
-    [11] = { id = 11, name = "Midnight", short = "MN", enabled = false }, -- Current expansion - always excluded
+    [11] = { id = 11, name = "Midnight", short = "MN", enabled = false },
 }
 
 -- Current expansion ID - will be overridden by Compat.lua if loaded
@@ -368,12 +368,6 @@ local function ShouldSellItem(bag, slot)
     -- Check if expansion is enabled for selling
     if not db.expansions[expansionID] then
         DebugPrint("Expansion disabled:", expansionID, itemLink)
-        return false
-    end
-    
-    -- Never sell items from current expansion or newer
-    if expansionID >= addon.CURRENT_EXPANSION then
-        DebugPrint("Current expansion item, skipping:", itemLink)
         return false
     end
     
