@@ -847,7 +847,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         end
         
     elseif msg == "exclude" then
-        local itemLink = GameTooltip:GetItem()
+        local _, itemLink = GameTooltip:GetItem()
         if itemLink then
             local itemID = tonumber(itemLink:match("item:(%d+)"))
             if itemID then
