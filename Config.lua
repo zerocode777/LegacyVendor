@@ -190,6 +190,43 @@ local function CreateOptionsPanel()
     end
     
     -- ==========================================
+    -- ITEM SOURCE FILTERS
+    -- ==========================================
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Item Source Filters"))
+    
+    -- Filter by source toggle (master toggle)
+    do
+        local variable = "LegacyVendor_FilterBySource"
+        local name = "Enable Source Filtering"
+        local tooltip = "When enabled, only sell items from checked sources (dungeons, raids, etc.). When disabled, source is ignored."
+        
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, LegacyVendorDB.filterBySource,
+            function() return LegacyVendorDB.filterBySource end,
+            function(value) LegacyVendorDB.filterBySource = value; RefreshButton() end)
+        
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    
+    -- Create toggles for each source type
+    local sourceOrder = { "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown" }
+    for _, sourceKey in ipairs(sourceOrder) do
+        local source = addon.ITEM_SOURCES[sourceKey]
+        if source then
+            local variable = "LegacyVendor_Source_" .. sourceKey
+            local name = source.name
+            local tooltip = "Include items from " .. source.name .. " when source filtering is enabled."
+            
+            local setting = Settings.RegisterProxySetting(category, variable,
+                Settings.VarType.Boolean, name, LegacyVendorDB.itemSources[sourceKey],
+                function() return LegacyVendorDB.itemSources[sourceKey] end,
+                function(value) LegacyVendorDB.itemSources[sourceKey] = value; RefreshButton() end)
+            
+            Settings.CreateCheckbox(category, setting, tooltip)
+        end
+    end
+    
+    -- ==========================================
     -- EXPANSION FILTERS
     -- ==========================================
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Expansion Filters"))
@@ -322,7 +359,7 @@ local function CreateSimpleConfig()
     scrollFrame:SetPoint("BOTTOMRIGHT", configFrame.Inset, "BOTTOMRIGHT", -25, 5)
     
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(400, 1800)  -- Taller to accommodate all filters
+    content:SetSize(400, 2100)  -- Taller to accommodate all filters including source filters
     scrollFrame:SetScrollChild(content)
     
     local yOffset = -10
@@ -423,6 +460,38 @@ local function CreateSimpleConfig()
         function() return LegacyVendorDB.sellUnbound end,
         function(v) LegacyVendorDB.sellUnbound = v end,
         true)
+    
+    yOffset = yOffset - 20
+    
+    -- ==========================================
+    -- ITEM SOURCE FILTERS
+    -- ==========================================
+    local headerSource = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    headerSource:SetPoint("TOPLEFT", 10, yOffset)
+    headerSource:SetText("|cFFFFD100Item Source Filters|r")
+    yOffset = yOffset - 5
+    
+    local sourceNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sourceNote:SetPoint("TOPLEFT", 10, yOffset)
+    sourceNote:SetText("|cFF888888Filter by where items came from (requires Enable Source Filtering)|r")
+    yOffset = yOffset - 20
+    
+    CreateCheckbox(content, "Enable Source Filtering", "When enabled, only sell items from checked sources below",
+        function() return LegacyVendorDB.filterBySource end,
+        function(v) LegacyVendorDB.filterBySource = v end,
+        true)
+    
+    -- Create source type checkboxes
+    local sourceOrder = { "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown" }
+    for _, sourceKey in ipairs(sourceOrder) do
+        local source = addon.ITEM_SOURCES[sourceKey]
+        if source then
+            CreateCheckbox(content, source.name, "Include items from " .. source.name,
+                function() return LegacyVendorDB.itemSources[sourceKey] end,
+                function(v) LegacyVendorDB.itemSources[sourceKey] = v end,
+                true)
+        end
+    end
     
     yOffset = yOffset - 20
     

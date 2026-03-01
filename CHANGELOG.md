@@ -5,6 +5,15 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-01
+
+### Added
+- **Item Source Filtering**: New filter category to sell items based on where they came from
+  - Dungeons, Raids, Outdoor/World, Professions, Vendors, PvP, Reputation, Housing/Delves, Unknown
+  - "Enable Source Filtering" master toggle to activate/deactivate source filtering
+  - All sources disabled by default for safety
+  - Uses C_ItemSourceInfo API on Retail with tooltip-based fallback for Classic
+
 ## [1.3.1] - 2026-02-28
 
 ### Fixed

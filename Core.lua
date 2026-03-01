@@ -109,6 +109,20 @@ addon.BIND_TYPES = {
     unbound = { name = "Not Bound (Food, Reagents)", enabled = false },
 }
 
+-- Item Source Types for filtering
+-- Allows filtering by where items came from (dungeons, raids, professions, etc.)
+addon.ITEM_SOURCES = {
+    dungeon = { name = "Dungeons", enabled = false },
+    raid = { name = "Raids", enabled = false },
+    outdoor = { name = "Outdoor/World (Quests, World Drops)", enabled = false },
+    profession = { name = "Professions (Crafted)", enabled = false },
+    vendor = { name = "Vendors (Purchased from NPCs)", enabled = false },
+    pvp = { name = "PvP (Battlegrounds, Arena)", enabled = false },
+    reputation = { name = "Reputation Rewards", enabled = false },
+    housing = { name = "Housing/Delves", enabled = false },
+    unknown = { name = "Unknown/Other", enabled = false },
+}
+
 -- Default settings
 local defaults = {
     enabled = true,
@@ -128,6 +142,8 @@ local defaults = {
     minItemLevel = 0,
     debug = false,
     sellDelay = 0.2, -- Delay between sells to avoid throttling
+    itemSources = {}, -- Source filter settings (vendor, crafted, dropped, etc.)
+    filterBySource = false, -- Whether to apply source filtering at all
     highlightItems = true, -- Highlight sellable items in bags
     highlightColor = { r = 1, g = 0.2, b = 0.2, a = 0.8 }, -- Red glow by default
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
@@ -151,6 +167,11 @@ end
 -- Initialize default item type settings
 for typeID, typeData in pairs(addon.ITEM_TYPES) do
     defaults.itemTypes[typeID] = typeData.enabled
+end
+
+-- Initialize default item source settings
+for sourceKey, sourceData in pairs(addon.ITEM_SOURCES) do
+    defaults.itemSources[sourceKey] = sourceData.enabled
 end
 
 -- Local references for performance
@@ -259,6 +280,106 @@ local function GetItemBindStatus(bag, slot, itemID)
     else
         return "unbound"  -- No bind type info, treat as unbound
     end
+end
+
+-- Get item source type - returns: "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown"
+-- Uses C_ItemSourceInfo API on Retail, falls back to heuristics on Classic
+local function GetItemSource(itemID, bag, slot)
+    if not itemID then return "unknown" end
+    
+    -- Try to use Retail's C_ItemSourceInfo API first (most accurate)
+    if C_ItemSourceInfo and C_ItemSourceInfo.GetItemSourceInfo then
+        local sourceInfo = C_ItemSourceInfo.GetItemSourceInfo(itemID)
+        if sourceInfo and sourceInfo.sourceType then
+            -- Map Blizzard source types to our categories
+            -- Source types: 1=Drop, 2=Vendor, 3=Quest, 4=Profession, 5=Achievement, etc.
+            local sourceType = sourceInfo.sourceType
+            
+            if sourceType == 1 then
+                -- Drop - need to check if it's dungeon, raid, or outdoor
+                if sourceInfo.encounterID or sourceInfo.instanceID then
+                    -- Check instance type
+                    if sourceInfo.difficultyID then
+                        local diffName = GetDifficultyInfo and GetDifficultyInfo(sourceInfo.difficultyID)
+                        if diffName and (diffName:find("Raid") or diffName:find("raid")) then
+                            return "raid"
+                        end
+                    end
+                    return "dungeon"
+                end
+                return "outdoor"
+            elseif sourceType == 2 then
+                return "vendor"
+            elseif sourceType == 3 then
+                return "outdoor" -- Quest rewards go to outdoor/world
+            elseif sourceType == 4 then
+                return "profession"
+            elseif sourceType == 5 then
+                return "outdoor" -- Achievement rewards
+            end
+        end
+    end
+    
+    -- Alternative: Try tooltip scanning for "Made by" (crafted items)
+    local tooltipData
+    if C_TooltipInfo and C_TooltipInfo.GetBagItem then
+        tooltipData = C_TooltipInfo.GetBagItem(bag, slot)
+        if tooltipData and tooltipData.lines then
+            for _, line in ipairs(tooltipData.lines) do
+                local text = line.leftText or ""
+                if text:find("Made by") or text:find("Crafted by") then
+                    return "profession"
+                end
+                if text:find("Vendor") or text:find("Purchased") then
+                    return "vendor"
+                end
+                if text:find("PvP") or text:find("Arena") or text:find("Battleground") or text:find("Honor") or text:find("Conquest") then
+                    return "pvp"
+                end
+                if text:find("Reputation") or text:find("Exalted") or text:find("Revered") then
+                    return "reputation"
+                end
+                if text:find("Delve") or text:find("Housing") then
+                    return "housing"
+                end
+            end
+        end
+    end
+    
+    -- Fallback: Use item info heuristics
+    local itemInfo
+    if C_Item.GetItemInfo then
+        itemInfo = { C_Item.GetItemInfo(itemID) }
+    else
+        itemInfo = { GetItemInfo(itemID) }
+    end
+    
+    if itemInfo and itemInfo[1] then
+        local itemName = itemInfo[1]
+        local classID = itemInfo[12]
+        local subClassID = itemInfo[13]
+        
+        -- classID 7 = Tradeskill (crafting materials are often crafted)
+        -- Check recipe-created items
+        if classID == 7 then
+            return "profession"
+        end
+        
+        -- Check item name patterns (localization-dependent, but helpful)
+        if itemName then
+            -- PvP gear patterns
+            if itemName:find("Gladiator") or itemName:find("Combatant") or itemName:find("Aspirant") then
+                return "pvp"
+            end
+            -- Housing/Delve patterns (TWW+)
+            if itemName:find("Delver") or itemName:find("Coffer") then
+                return "housing"
+            end
+        end
+    end
+    
+    -- Default to unknown if we can't determine source
+    return "unknown"
 end
 
 -- Legacy function for backwards compatibility
@@ -448,6 +569,26 @@ local function ShouldSellItem(bag, slot)
             end
             if not dominated then
                 DebugPrint("Item level not lower than equipped, skipping:", itemLink, "(", itemLevel, ")")
+                return false
+            end
+        end
+    end
+    
+    -- === FILTER 7: ITEM SOURCE (dungeon, raid, profession, vendor, etc.) ===
+    if db.filterBySource then
+        local itemSource = GetItemSource(itemID, bag, slot)
+        DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
+        
+        -- Check if this source is enabled
+        if db.itemSources and db.itemSources[itemSource] ~= nil then
+            if not db.itemSources[itemSource] then
+                DebugPrint("Item source not enabled:", itemSource, itemLink)
+                return false
+            end
+        elseif itemSource == "unknown" then
+            -- Unknown source - check if unknown is enabled
+            if db.itemSources and db.itemSources["unknown"] == false then
+                DebugPrint("Unknown source not enabled:", itemLink)
                 return false
             end
         end
