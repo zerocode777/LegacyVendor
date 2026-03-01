@@ -1179,10 +1179,10 @@ local function CreateMinimapButton()
         LegacyVendorDB.minimapButton.freeformY = nil
     end
     
-    local button = CreateFrame("Button", "LegacyVendorMinimapButton", UIParent)
+    local button = CreateFrame("Button", "LegacyVendorMinimapButton", Minimap)
     button:SetSize(32, 32)
     button:SetFrameStrata("MEDIUM")
-    button:SetFrameLevel(8)
+    button:SetFrameLevel(Minimap:GetFrameLevel() + 10) -- Ensure we're above minimap content
     button:EnableMouse(true)
     button:SetMovable(true)
     button:SetClampedToScreen(true) -- Prevent button from going off-screen
@@ -1218,7 +1218,10 @@ local function CreateMinimapButton()
     -- Or use freeform positioning if enabled
     local function UpdatePosition()
         if LegacyVendorDB.minimapButton.freeform then
-            -- Freeform mode: position anywhere on screen
+            -- Freeform mode: position anywhere on screen, parent to UIParent
+            button:SetParent(UIParent)
+            button:SetFrameStrata("MEDIUM")
+            button:SetFrameLevel(100)
             local x = LegacyVendorDB.minimapButton.freeformX
             local y = LegacyVendorDB.minimapButton.freeformY
             if x and y then
@@ -1230,7 +1233,10 @@ local function CreateMinimapButton()
                 button:SetPoint("CENTER", Minimap, "CENTER", -60, -60)
             end
         else
-            -- Circular/minimap-attached mode
+            -- Circular/minimap-attached mode: parent to Minimap so we follow it
+            button:SetParent(Minimap)
+            button:SetFrameStrata("MEDIUM")
+            button:SetFrameLevel(Minimap:GetFrameLevel() + 10)
             local angle = LegacyVendorDB.minimapButton.minimapPos or 220
             local radius = GetMinimapRadius(angle)
             local rad = math.rad(angle)
@@ -1258,6 +1264,10 @@ local function CreateMinimapButton()
         if IsShiftKeyDown() then
             dragMode = "freeform"
             LegacyVendorDB.minimapButton.freeform = true
+            -- Re-parent to UIParent for freeform dragging
+            self:SetParent(UIParent)
+            self:SetFrameStrata("MEDIUM")
+            self:SetFrameLevel(100)
             self:StartMoving()
         elseif LegacyVendorDB.minimapButton.freeform then
             -- Already in freeform mode, continue freeform drag

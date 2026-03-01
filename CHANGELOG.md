@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All sources disabled by default for safety
   - Uses C_ItemSourceInfo API on Retail with tooltip-based fallback for Classic
 
+### Fixed
+- Fixed minimap button moving to center of screen when FarmHud or similar minimap-replacing addons are active
+  - Button now properly parents to Minimap frame when in attached mode, so it follows the minimap
+  - Freeform mode still parents to UIParent for free placement anywhere on screen
+
 ## [1.3.1] - 2026-02-28
 
 ### Fixed
