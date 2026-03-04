@@ -692,12 +692,12 @@ local function SellNextItem()
     end
     
     local item = table.remove(itemsToSell, 1)
-    Print(string.format("Attempting to sell: %s (bag %d, slot %d)", item.link or "Unknown", item.bag, item.slot))
+    DebugPrint(string.format("Attempting to sell: %s (bag %d, slot %d)", item.link or "Unknown", item.bag, item.slot))
     
     -- Verify item is still there (using modern API)
     local containerInfo = C_Container.GetContainerItemInfo(item.bag, item.slot)
     if containerInfo and containerInfo.hyperlink then
-        Print("  Item verified in slot, selling...")
+        DebugPrint("  Item verified in slot, selling...")
         -- Use the container API for selling
         -- This works when merchant window is open
         local success, err = pcall(function()
@@ -706,12 +706,12 @@ local function SellNextItem()
         
         if success then
             itemsSoldCount = itemsSoldCount + 1
-            Print("  Sold successfully!")
+            DebugPrint("  Sold successfully!")
         else
             Print("  FAILED to sell: " .. (err or "unknown error"))
         end
     else
-        Print("  Item no longer in slot, skipping")
+        DebugPrint("  Item no longer in slot, skipping")
     end
     
     -- Schedule next sell with delay to avoid API throttling

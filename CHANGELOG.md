@@ -5,6 +5,13 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-03-04
+
+### Changed
+- Reduced chat spam when selling items — per-item messages ("Attempting to sell...", "Sold successfully!") now only show when debug mode is enabled
+  - Previously each item sold generated 3 chat messages; now only the final summary is shown
+  - Enable debug mode with `/lv debug` if you want verbose per-item output
+
 ## [1.4.0] - 2026-03-01
 
 ### Added
