@@ -5,6 +5,13 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-03-23
+
+### Fixed
+- Items from refreshed M+ dungeons (Skyreach, Pit of Saron, etc.) are no longer auto-sold
+  - Old expansion dungeons in the seasonal M+ rotation drop current-ilvl gear
+  - Addon now detects items with legacy expansion IDs but current-content item levels (554+) and protects them from being sold
+
 ## [1.4.1] - 2026-03-04
 
 ### Changed

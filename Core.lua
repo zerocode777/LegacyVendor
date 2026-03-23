@@ -25,6 +25,12 @@ if not addon.CURRENT_EXPANSION then
     addon.CURRENT_EXPANSION = 11
 end
 
+-- Minimum item level considered "current content"
+-- Items from old expansions with ilvl >= this threshold are likely from
+-- refreshed M+ dungeons (e.g. Skyreach, Pit of Saron in seasonal rotation)
+-- and should NOT be sold even if their expansion is marked for selling
+addon.CURRENT_CONTENT_MIN_ILVL = 554
+
 -- Item Rarities (Quality)
 addon.RARITIES = {
     [0] = { id = 0, name = "Poor (Gray)", color = "9d9d9d", enabled = true },
@@ -484,6 +490,20 @@ local function ShouldSellItem(bag, slot)
     if not expansionID then 
         DebugPrint("Could not determine expansion:", itemLink)
         return false 
+    end
+    
+    -- Get actual item level for current content check
+    local actualItemLevel = itemInfo[4] or 0
+    if GetDetailedItemLevelInfo then
+        actualItemLevel = GetDetailedItemLevelInfo(itemLink) or actualItemLevel
+    end
+    
+    -- Protection for refreshed M+ dungeons (e.g. Skyreach, Pit of Saron)
+    -- If item has legacy expansion ID but current-content item level, skip selling
+    -- This catches items from old dungeons that are in the current M+ rotation
+    if expansionID < addon.CURRENT_EXPANSION and actualItemLevel >= addon.CURRENT_CONTENT_MIN_ILVL then
+        DebugPrint("Skipping refreshed M+ item:", itemLink, "ExpID:", expansionID, "iLvl:", actualItemLevel)
+        return false
     end
     
     -- Check if expansion is enabled for selling
