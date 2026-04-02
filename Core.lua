@@ -25,11 +25,41 @@ if not addon.CURRENT_EXPANSION then
     addon.CURRENT_EXPANSION = 11
 end
 
--- Minimum item level considered "current content"
--- Items from old expansions with ilvl >= this threshold are likely from
--- refreshed M+ dungeons (e.g. Skyreach, Pit of Saron in seasonal rotation)
--- and should NOT be sold even if their expansion is marked for selling
-addon.CURRENT_CONTENT_MIN_ILVL = 554
+-- Historical item level ceiling for each expansion.
+-- Items whose effective ilvl (with bonus IDs applied) exceeds this value were
+-- almost certainly scaled up by current-season M+ bonus IDs.
+-- NOTE: WoD (5) and Legion (6) ceilings are ABOVE current content ilvl due to
+-- pre-squish inflation — rely on SEASONAL_LEGACY_DUNGEON_INSTANCES for those.
+addon.EXPANSION_ILVL_CEILING = {
+    [0] = 90,    -- Classic (Naxxramas 40-man)
+    [1] = 170,   -- The Burning Crusade (Sunwell Plateau)
+    [2] = 300,   -- Wrath of the Lich King (ICC Heroic 25)
+    [3] = 420,   -- Cataclysm (Dragon Soul Heroic 25)
+    [4] = 580,   -- Mists of Pandaria (Siege of Orgrimmar Heroic 25)
+    [5] = 745,   -- Warlords of Draenor (pre-squish peak) — use instance table instead
+    [6] = 1010,  -- Legion (pre-squish peak) — use instance table instead
+    [7] = 495,   -- Battle for Azeroth (Ny'alotha Heroic, post-squish)
+    [8] = 290,   -- Shadowlands (Sepulcher Heroic, post-squish)
+    [9] = 540,   -- Dragonflight (Amirdrassil Heroic)
+    [10] = 690,  -- The War Within (update each season as the ceiling rises)
+}
+
+-- EJ (Encounter Journal) instance IDs for legacy expansion dungeons currently
+-- in the seasonal M0/M+ rotation. Items from these instances bear old expansion
+-- IDs but drop at current-tier ilvl and must never be auto-sold.
+--
+-- HOW TO FIND INSTANCE IDs:
+--   1. /lv debug      (enable debug output)
+--   2. Open a vendor with the suspicious item in your bags
+--   3. Look for "Item source instanceID: X" lines in chat
+--   4. Add the ID here and report it on the addon page
+--
+-- TWW Season 3 (patch 11.x, 2026) — update when the rotation changes:
+addon.SEASONAL_LEGACY_DUNGEON_INSTANCES = {
+    [226] = true,   -- Pit of Saron (Wrath of the Lich King)
+    [585] = true,   -- Skyreach (Warlords of Draenor)
+    -- Report additional instance IDs via the addon page if items slip through
+}
 
 -- Item Rarities (Quality)
 addon.RARITIES = {
@@ -98,14 +128,15 @@ addon.EQUIP_LOC_TO_SLOT = {
 
 -- Non-Equippable Item Types (classID from GetItemInfoInstant)
 addon.ITEM_TYPES = {
-    [0] = { name = "Consumables (Food/Potions)", enabled = false },  -- Consumable
-    [1] = { name = "Containers (Bags)", enabled = false },           -- Container
-    [5] = { name = "Reagents (Crafting)", enabled = false },         -- Reagent
-    [7] = { name = "Trade Goods (Materials)", enabled = false },     -- Tradeskill
-    [9] = { name = "Recipes", enabled = false },                     -- Recipe
-    [12] = { name = "Quest Items", enabled = false },                -- Quest
-    [13] = { name = "Keys", enabled = false },                       -- Key
-    [15] = { name = "Miscellaneous", enabled = false },              -- Miscellaneous
+    [0] = { name = "Consumables (Food/Potions)", enabled = false },   -- Consumable
+    [1] = { name = "Containers (Bags)", enabled = false },            -- Container
+    [3] = { name = "Gems", enabled = false },                         -- Gem (crafting)
+    [5] = { name = "Reagents (Crafting Materials)", enabled = false },-- Reagent
+    [7] = { name = "Trade Goods (Vellums, Mats)", enabled = false },  -- Tradeskill
+    [9] = { name = "Recipes", enabled = false },                      -- Recipe
+    [12] = { name = "Quest Items", enabled = false },                 -- Quest
+    [13] = { name = "Keys", enabled = false },                        -- Key
+    [15] = { name = "Miscellaneous", enabled = false },               -- Miscellaneous
 }
 
 -- Bind Types for filtering
@@ -492,18 +523,34 @@ local function ShouldSellItem(bag, slot)
         return false 
     end
     
-    -- Get actual item level for current content check
-    local actualItemLevel = itemInfo[4] or 0
-    if GetDetailedItemLevelInfo then
-        actualItemLevel = GetDetailedItemLevelInfo(itemLink) or actualItemLevel
-    end
+    -- === SEASONAL M+ PROTECTION ===
+    -- Items from legacy dungeons in the current seasonal M0/M+ rotation carry old
+    -- expansion IDs but drop at current-tier ilvl. They must never be auto-sold.
+    if expansionID < addon.CURRENT_EXPANSION then
     
-    -- Protection for refreshed M+ dungeons (e.g. Skyreach, Pit of Saron)
-    -- If item has legacy expansion ID but current-content item level, skip selling
-    -- This catches items from old dungeons that are in the current M+ rotation
-    if expansionID < addon.CURRENT_EXPANSION and actualItemLevel >= addon.CURRENT_CONTENT_MIN_ILVL then
-        DebugPrint("Skipping refreshed M+ item:", itemLink, "ExpID:", expansionID, "iLvl:", actualItemLevel)
-        return false
+        -- Method 1: Instance table (primary — reliable for ALL expansions incl. WoD/Legion
+        -- whose pre-squish ilvl peaks may overlap with or exceed current content ilvl)
+        if C_ItemSourceInfo and C_ItemSourceInfo.GetItemSourceInfo then
+            local sourceInfo = C_ItemSourceInfo.GetItemSourceInfo(itemID)
+            if sourceInfo and sourceInfo.instanceID then
+                DebugPrint("Item source instanceID:", sourceInfo.instanceID, "for", itemLink)
+                if addon.SEASONAL_LEGACY_DUNGEON_INSTANCES[sourceInfo.instanceID] then
+                    DebugPrint("Skipping seasonal M+ item:", itemLink)
+                    return false
+                end
+            end
+        end
+        
+        -- Method 2: Per-expansion ilvl ceiling (secondary — automatic but unreliable for
+        -- WoD/Legion; reliable for Classic-MoP and post-squish BFA/SL/DF)
+        local ilvlCeiling = addon.EXPANSION_ILVL_CEILING[expansionID]
+        if ilvlCeiling then
+            local effectiveIlvl = GetDetailedItemLevelInfo and GetDetailedItemLevelInfo(itemLink)
+            if effectiveIlvl and effectiveIlvl > ilvlCeiling then
+                DebugPrint("Skipping scaled M+ item (ilvl", effectiveIlvl, "> ceiling", ilvlCeiling, "):", itemLink)
+                return false
+            end
+        end
     end
     
     -- Check if expansion is enabled for selling
@@ -534,22 +581,10 @@ local function ShouldSellItem(bag, slot)
                 return false
             end
         elseif classID and classID ~= 2 and classID ~= 4 then
-            -- Non-equippable item with a classID not in our filter list
-            -- classID 2 = Weapon, 4 = Armor (handled by equipSlots)
-            -- If it's not in our itemTypes list, skip it unless itemTypes filter is empty/disabled
-            local hasAnyItemTypeEnabled = false
-            if db.itemTypes then
-                for typeID, enabled in pairs(db.itemTypes) do
-                    if enabled then
-                        hasAnyItemTypeEnabled = true
-                        break
-                    end
-                end
-            end
-            if hasAnyItemTypeEnabled then
-                DebugPrint("Non-equipment item type not in enabled list:", classID, itemLink)
-                return false
-            end
+            -- Non-equippable item with unrecognized classID — skip by default.
+            -- classID 2 = Weapon and 4 = Armor are handled by equipment slot filters.
+            DebugPrint("Unrecognized non-equipment item type, skipping:", classID, itemLink)
+            return false
         end
     end
     

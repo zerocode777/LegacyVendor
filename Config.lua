@@ -313,13 +313,37 @@ local function CreateOptionsPanel()
     -- ==========================================
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Non-Equippable Item Types"))
     
-    local typeOrder = {0, 1, 5, 7, 9, 12, 13, 15}
-    for _, typeID in ipairs(typeOrder) do
+    local generalTypeOrder = {0, 1, 12, 13, 15}
+    for _, typeID in ipairs(generalTypeOrder) do
         local itemType = addon.ITEM_TYPES[typeID]
         if itemType then
             local variable = "LegacyVendor_Type" .. typeID
             local name = itemType.name
             local tooltip = "Enable selling of " .. itemType.name .. "."
+            
+            local setting = Settings.RegisterProxySetting(category, variable,
+                Settings.VarType.Boolean, name, LegacyVendorDB.itemTypes[typeID],
+                function() return LegacyVendorDB.itemTypes[typeID] end,
+                function(value) LegacyVendorDB.itemTypes[typeID] = value; RefreshButton() end)
+            
+            Settings.CreateCheckbox(category, setting, tooltip)
+        end
+    end
+    
+    -- ==========================================
+    -- CRAFTING & PROFESSION ITEM FILTERS
+    -- ==========================================
+    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Crafting & Profession Items"))
+    
+    -- Gems, Reagents, Trade Goods (Vellums), and Recipes are off by default.
+    -- Only enable if you intentionally want to sell legacy crafting materials.
+    local craftingTypeOrder = {3, 5, 7, 9}
+    for _, typeID in ipairs(craftingTypeOrder) do
+        local itemType = addon.ITEM_TYPES[typeID]
+        if itemType then
+            local variable = "LegacyVendor_Type" .. typeID
+            local name = itemType.name
+            local tooltip = "Enable selling of " .. itemType.name .. ". Off by default — enable only to sell legacy crafting materials."
             
             local setting = Settings.RegisterProxySetting(category, variable,
                 Settings.VarType.Boolean, name, LegacyVendorDB.itemTypes[typeID],
@@ -359,7 +383,7 @@ local function CreateSimpleConfig()
     scrollFrame:SetPoint("BOTTOMRIGHT", configFrame.Inset, "BOTTOMRIGHT", -25, 5)
     
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(400, 2100)  -- Taller to accommodate all filters including source filters
+    content:SetSize(400, 2300)  -- Taller to accommodate all filters including crafting section
     scrollFrame:SetScrollChild(content)
     
     local yOffset = -10
@@ -603,12 +627,34 @@ local function CreateSimpleConfig()
     typeNote:SetText("|cFF888888Non-equippable items must be of a checked type|r")
     yOffset = yOffset - 20
     
-    -- Sort item types by ID
-    local typeOrder = {0, 1, 5, 7, 9, 12, 13, 15}
-    for _, typeID in ipairs(typeOrder) do
+    local generalTypeOrder = {0, 1, 12, 13, 15}
+    for _, typeID in ipairs(generalTypeOrder) do
         local itemType = addon.ITEM_TYPES[typeID]
         if itemType then
             CreateCheckbox(content, itemType.name, "Sell " .. itemType.name,
+                function() return LegacyVendorDB.itemTypes[typeID] end,
+                function(v) LegacyVendorDB.itemTypes[typeID] = v end)
+        end
+    end
+    
+    yOffset = yOffset - 15
+    
+    -- Crafting & Profession Items sub-section
+    local craftingHeader = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    craftingHeader:SetPoint("TOPLEFT", 10, yOffset)
+    craftingHeader:SetText("|cFFFFD100Crafting & Profession Items|r (NEVER sell by default)")
+    yOffset = yOffset - 5
+    
+    local craftingNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    craftingNote:SetPoint("TOPLEFT", 10, yOffset)
+    craftingNote:SetText("|cFF888888Gems, vellums, reagents, recipes — unchecked = always protected|r")
+    yOffset = yOffset - 20
+    
+    local craftingTypeOrder = {3, 5, 7, 9}
+    for _, typeID in ipairs(craftingTypeOrder) do
+        local itemType = addon.ITEM_TYPES[typeID]
+        if itemType then
+            CreateCheckbox(content, itemType.name, "Sell " .. itemType.name .. " (off by default to protect crafting mats)",
                 function() return LegacyVendorDB.itemTypes[typeID] end,
                 function(v) LegacyVendorDB.itemTypes[typeID] = v end)
         end

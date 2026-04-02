@@ -5,6 +5,20 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-04-02
+
+### Fixed
+- Seasonal M+ dungeon protection completely reworked (1.4.2 single-threshold approach was insufficient)
+  - **New primary check: instance table** — items are cross-referenced against a maintained list of Encounter Journal instance IDs for legacy dungeons in the current M+ rotation (Pit of Saron, Skyreach confirmed for TWW Season 3). Works for WoD and Legion where pre-squish ilvl peaks make ilvl comparison unreliable
+  - **New secondary check: per-expansion ilvl ceiling** — replaces the broken single global threshold (554) with historically accurate per-expansion maximums; reliably catches scaled-up items from Classic through MoP and post-squish BFA/SL/DF 
+  - Enable debug mode (`/lv debug`) to see `Item source instanceID:` output and help identify seasonal dungeons not yet in the table
+- Unrecognized non-equippable item types now default to protected (skip, do not sell) instead of potentially passing through filters depending on other settings
+
+### Added
+- **Crafting & Profession Items** — new dedicated section in the addon settings
+  - Gems (item classID 3) now tracked and protected by default (was missing from filters entirely and could slip through)
+  - Reagents, Trade Goods (Vellums), and Recipes grouped under a clear "Crafting & Profession Items" header in the UI with an explicit "never sell by default" note
+
 ## [1.4.2] - 2026-03-23
 
 ### Fixed
