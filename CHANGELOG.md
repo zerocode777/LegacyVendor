@@ -5,6 +5,72 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-30
+
+### Added
+- Complete per-option in-game tooltip guidance for the custom config window:
+  - Every checkbox now has explicit hover help text
+  - Tooltip titles now include scope tags (`[Global]` or `[Per-Expansion]`)
+  - Tooltips include an always-visible filter evaluation order so users can understand precedence without guessing
+- Animated bag preview highlighting for sellable items while a merchant window is open:
+  - Automatic refresh on merchant open
+  - Automatic refresh on bag updates while merchant is open
+  - Automatic clear on merchant close
+- New visual "cut-here" style highlight language for sellable bag items:
+  - Marching rectangular border dots (clockwise loop animation)
+  - High-visibility tint/fill to improve discoverability
+  - Slimmer ant size refinement for better readability at real bag scale
+
+### Changed
+- Major filter behavior clarification and precedence consistency improvements:
+  - Source filtering now participates correctly in expansion meta flow so unchecked sources are not accidentally sold through meta short-circuiting
+  - Expansion meta behavior and detailed profile behavior are now explained directly in UI copy to reduce ambiguity
+- Configuration UI readability overhaul (large quality-of-life pass):
+  - Improved section hierarchy and spacing
+  - Better grouping and clearer labels around expansion profile editing
+  - Scope-aware phrasing to distinguish global toggles from per-expansion profile toggles
+- Expansion profile UX refinements:
+  - Profile editor language now explicitly communicates what overrides what
+  - Option text updated to reduce interpretation errors around "sell all" vs nested filtering
+
+### Fixed
+- Fixed critical load-order regression where profile default construction was referenced before function definition, which prevented full addon initialization (slash commands, minimap button, and merchant button could fail to appear)
+- Fixed custom settings window anchor behavior in modern clients where frame inset assumptions could cause content to render outside the window bounds
+- Fixed source precedence confusion in edge paths that caused users to see items sold despite source filters being disabled
+- Fixed consumable filter duplication confusion by removing redundant consumable control from non-equippable type paths and keeping consumables under source filtering where they belong
+- Fixed bag highlight system reliability in modern container UIs by replacing brittle frame-name assumptions with safer bag/slot mapping and container enumeration fallbacks
+
+### Notes
+- This release focuses on two themes: filter predictability and visual trust.
+- If an item is highlighted, it is expected to be sell-candidate under current settings and merchant context.
+- If an item is not highlighted while merchant is open, it is expected to be protected by at least one active filter gate.
+- A follow-up pass is planned for deeper offhand-slot debugging based on live user reports.
+
+## [2.0.0] - 2026-04-30
+
+### Fixed
+- Fixed consumables being grouped into broader source paths by introducing a dedicated source bucket for food, oils, flasks, and potions
+- Strict seasonal M+ guard now only targets dungeon/raid gear logic and no longer overrides consumables
+- Sell button count now updates live while merchant is open when bags change (manual sells, buys, loot changes)
+
+### Added
+- New item source category: Consumables (Food, Potions, Oils)
+- New expansion meta mode: checked expansions can sell all items in that expansion bucket
+- In expansion meta mode, current-season M+ legacy dungeon gear is mapped to current expansion filtering
+- New slash command: /lv meta
+- New per-expansion profile engine with nested filters:
+  - Bind type filters per expansion
+  - Item source filters per expansion
+  - Rarity filters per expansion
+  - Equipment slot filters per expansion
+  - Item type filters per expansion
+  - Per-expansion "only sell lower item level" toggle
+- New in-game expansion profile editor in the LegacyVendor config frame
+- New always-visible expansion sell-state summary in config (SELL ALL / DETAIL / GLOBAL / KEEP)
+
+### Changed
+- LegacyVendor config now always opens the in-game frame to expose the full expansion profile editor
+
 ## [1.4.3] - 2026-04-02
 
 ### Fixed

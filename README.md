@@ -2,7 +2,7 @@
 
 **Automatically sell Bind on Pickup items from legacy expansions when visiting a vendor.**
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![WoW Version](https://img.shields.io/badge/WoW-Retail%20%7C%20Classic%20%7C%20Cataclysm-green)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -14,6 +14,7 @@ Legacy Vendor helps you keep your bags clean by automatically identifying and se
 
 - 🎯 **Smart Detection**: Identifies BoP items from legacy expansions
 - 🛡️ **Current Expansion Protection**: Never sells items from the current expansion
+- 🔒 **Strict Seasonal M+ Protection**: Hard-blocks current-season scaled items from legacy dungeons before any other sell filter runs
 - ⚙️ **Granular Filters**: Filter by expansion, rarity, equipment slot, and item type
 - 🔘 **Manual or Auto Mode**: Choose between button-click selling or automatic
 - 🗺️ **Minimap Button**: Quick access to settings
@@ -64,6 +65,7 @@ Legacy Vendor helps you keep your bags clean by automatically identifying and se
 | `/lv minimap` | Toggle minimap button |
 | `/lv reset` | Reset to defaults |
 | `/lv debug` | Toggle debug messages |
+| `/lv strict` | Toggle strict seasonal M+ protection |
 
 ### Filter Logic
 
@@ -83,6 +85,7 @@ AND ✅ Item is not manually excluded
 ### General Settings
 - **Enable LegacyVendor** - Master toggle
 - **Auto-Sell Mode** - Sell automatically when opening vendor (off by default)
+- **Strict Seasonal M+ Protection** - Hard-protect current-season scaled legacy dungeon items (on by default)
 - **Show Sale Summary** - Display gold earned after selling
 - **Confirm Before Selling** - Show confirmation dialog
 - **Also Sell Gray Items** - Sell all gray items regardless of filters
@@ -137,6 +140,9 @@ This addon uses modern WoW APIs with fallbacks for Classic:
 
 **Q: Will this sell my current expansion gear?**
 A: No! The current expansion is always protected and cannot be enabled.
+
+**Q: Can strict seasonal protection ignore my other filters?**
+A: Yes. When enabled, strict protection runs first and always keeps current-season scaled legacy dungeon items, even if other filters would normally sell them.
 
 **Q: Can I recover items I accidentally sold?**
 A: Yes, use the Buyback tab at any vendor within the same session.

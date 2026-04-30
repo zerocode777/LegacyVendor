@@ -61,6 +61,11 @@ addon.SEASONAL_LEGACY_DUNGEON_INSTANCES = {
     -- Report additional instance IDs via the addon page if items slip through
 }
 
+-- Hard floor used by strict seasonal protection.
+-- If a legacy item reaches this effective ilvl, treat it as current-season scaled
+-- content and never sell it.
+addon.STRICT_SEASONAL_ILVL_FLOOR = 620
+
 -- Item Rarities (Quality)
 addon.RARITIES = {
     [0] = { id = 0, name = "Poor (Gray)", color = "9d9d9d", enabled = true },
@@ -149,6 +154,7 @@ addon.BIND_TYPES = {
 -- Item Source Types for filtering
 -- Allows filtering by where items came from (dungeons, raids, professions, etc.)
 addon.ITEM_SOURCES = {
+    consumable = { name = "Consumables (Food, Potions, Oils)", enabled = false },
     dungeon = { name = "Dungeons", enabled = false },
     raid = { name = "Raids", enabled = false },
     outdoor = { name = "Outdoor/World (Quests, World Drops)", enabled = false },
@@ -159,6 +165,36 @@ addon.ITEM_SOURCES = {
     housing = { name = "Housing/Delves", enabled = false },
     unknown = { name = "Unknown/Other", enabled = false },
 }
+
+local function CreateDefaultExpansionProfile()
+    local profile = {
+        useDetailedFilters = false,
+        filterBySource = false,
+        onlySellLowerIlvl = false,
+        bindTypes = {
+            bop = addon.BIND_TYPES.bop.enabled,
+            boe = addon.BIND_TYPES.boe.enabled,
+            unbound = addon.BIND_TYPES.unbound.enabled,
+        },
+        rarities = {},
+        equipSlots = {},
+        itemTypes = {},
+        itemSources = {},
+    }
+    for rarityID, rarityData in pairs(addon.RARITIES) do
+        profile.rarities[rarityID] = rarityData.enabled
+    end
+    for slotKey, slotData in pairs(addon.EQUIP_SLOTS) do
+        profile.equipSlots[slotKey] = slotData.enabled
+    end
+    for typeID, typeData in pairs(addon.ITEM_TYPES) do
+        profile.itemTypes[typeID] = typeData.enabled
+    end
+    for sourceKey, sourceData in pairs(addon.ITEM_SOURCES) do
+        profile.itemSources[sourceKey] = sourceData.enabled
+    end
+    return profile
+end
 
 -- Default settings
 local defaults = {
@@ -184,6 +220,9 @@ local defaults = {
     highlightItems = true, -- Highlight sellable items in bags
     highlightColor = { r = 1, g = 0.2, b = 0.2, a = 0.8 }, -- Red glow by default
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
+    strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
+    expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
+    expansionProfiles = {}, -- Per-expansion nested filter profiles
 }
 
 -- Initialize default expansion settings
@@ -209,6 +248,10 @@ end
 -- Initialize default item source settings
 for sourceKey, sourceData in pairs(addon.ITEM_SOURCES) do
     defaults.itemSources[sourceKey] = sourceData.enabled
+end
+
+for expID, _ in pairs(addon.EXPANSIONS) do
+    defaults.expansionProfiles[expID] = CreateDefaultExpansionProfile()
 end
 
 -- Local references for performance
@@ -241,6 +284,42 @@ end
 
 addon.Print = Print
 addon.DebugPrint = DebugPrint
+
+local function EnsureExpansionProfiles(db)
+    if not db.expansionProfiles then
+        db.expansionProfiles = {}
+    end
+
+    local maxExp = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION
+    for expID, _ in pairs(addon.EXPANSIONS) do
+        if expID <= maxExp and not db.expansionProfiles[expID] then
+            local profile = CreateDefaultExpansionProfile()
+            profile.bindTypes.bop = db.sellBoP
+            profile.bindTypes.boe = db.sellBoE
+            profile.bindTypes.unbound = db.sellUnbound
+            profile.filterBySource = db.filterBySource
+            profile.onlySellLowerIlvl = db.onlySellLowerIlvl
+
+            for rarityID, enabled in pairs(db.rarities or {}) do
+                profile.rarities[rarityID] = enabled
+            end
+            for slotKey, enabled in pairs(db.equipSlots or {}) do
+                profile.equipSlots[slotKey] = enabled
+            end
+            for typeID, enabled in pairs(db.itemTypes or {}) do
+                profile.itemTypes[typeID] = enabled
+            end
+            for sourceKey, enabled in pairs(db.itemSources or {}) do
+                profile.itemSources[sourceKey] = enabled
+            end
+
+            db.expansionProfiles[expID] = profile
+        end
+    end
+end
+
+addon.CreateDefaultExpansionProfile = CreateDefaultExpansionProfile
+addon.EnsureExpansionProfiles = EnsureExpansionProfiles
 
 -- Get expansion ID from item (uses compat layer if available)
 local function GetItemExpansionID(itemID)
@@ -319,10 +398,24 @@ local function GetItemBindStatus(bag, slot, itemID)
     end
 end
 
--- Get item source type - returns: "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown"
+-- Get item source type - returns: "consumable", "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown"
 -- Uses C_ItemSourceInfo API on Retail, falls back to heuristics on Classic
 local function GetItemSource(itemID, bag, slot)
     if not itemID then return "unknown" end
+
+    local itemInfo
+    if C_Item.GetItemInfo then
+        itemInfo = { C_Item.GetItemInfo(itemID) }
+    else
+        itemInfo = { GetItemInfo(itemID) }
+    end
+
+    -- Consumables are treated as their own source bucket regardless of where they dropped.
+    -- This prevents dungeon-source filtering from sweeping up food/potions/oils.
+    local classID = itemInfo and itemInfo[12]
+    if classID == 0 then
+        return "consumable"
+    end
     
     -- Try to use Retail's C_ItemSourceInfo API first (most accurate)
     if C_ItemSourceInfo and C_ItemSourceInfo.GetItemSourceInfo then
@@ -384,16 +477,8 @@ local function GetItemSource(itemID, bag, slot)
     end
     
     -- Fallback: Use item info heuristics
-    local itemInfo
-    if C_Item.GetItemInfo then
-        itemInfo = { C_Item.GetItemInfo(itemID) }
-    else
-        itemInfo = { GetItemInfo(itemID) }
-    end
-    
     if itemInfo and itemInfo[1] then
         local itemName = itemInfo[1]
-        local classID = itemInfo[12]
         local subClassID = itemInfo[13]
         
         -- classID 7 = Tradeskill (crafting materials are often crafted)
@@ -426,6 +511,83 @@ local function IsBindOnPickup(bag, slot)
     local itemID = C_Item.GetItemID(itemLocation)
     if not itemID then return false end
     return GetItemBindStatus(bag, slot, itemID) == "bop"
+end
+
+-- Returns true if an item appears to be current-season scaled gear from a legacy
+-- dungeon and should be hard-protected from vendor selling.
+local function IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItemLevel, classID, equipLoc, bag, slot)
+    if not itemID or not itemLink or not expansionID then
+        return false
+    end
+
+    -- Only legacy expansions can be seasonal legacy dungeon candidates.
+    if expansionID >= addon.CURRENT_EXPANSION then
+        return false
+    end
+
+    -- Strict seasonal guard is only for dungeon gear, not consumables.
+    local isEquipment = equipLoc and equipLoc ~= ""
+    if not isEquipment and classID ~= 2 and classID ~= 4 then
+        return false
+    end
+
+    local sourceBucket = GetItemSource(itemID, bag, slot)
+    if sourceBucket ~= "dungeon" and sourceBucket ~= "raid" then
+        return false
+    end
+
+    -- Signal 1: explicit instance allowlist for current seasonal rotation.
+    if C_ItemSourceInfo and C_ItemSourceInfo.GetItemSourceInfo then
+        local sourceInfo = C_ItemSourceInfo.GetItemSourceInfo(itemID)
+        if sourceInfo and sourceInfo.instanceID then
+            DebugPrint("Item source instanceID:", sourceInfo.instanceID, "for", itemLink)
+            if addon.SEASONAL_LEGACY_DUNGEON_INSTANCES[sourceInfo.instanceID] then
+                return true
+            end
+        end
+    end
+
+    local effectiveIlvl = GetDetailedItemLevelInfo and GetDetailedItemLevelInfo(itemLink)
+    if not effectiveIlvl then
+        return false
+    end
+
+    -- Signal 2: expansion-specific ilvl ceiling (safe for most legacy expansions).
+    local ilvlCeiling = addon.EXPANSION_ILVL_CEILING[expansionID]
+    if ilvlCeiling and effectiveIlvl > ilvlCeiling then
+        return true
+    end
+
+    -- Signal 3: large scaling delta between base and effective item level.
+    -- Current-season scaling bonuses typically create a large gap.
+    if baseItemLevel and baseItemLevel > 0 and (effectiveIlvl - baseItemLevel) >= 120 then
+        return true
+    end
+
+    -- Signal 4: conservative hard floor for modern-season ilvl.
+    -- Skip WoD/Legion here because pre-squish item levels can be unusually high.
+    local hardFloor = addon.STRICT_SEASONAL_ILVL_FLOOR
+    if hardFloor and expansionID ~= 5 and expansionID ~= 6 and effectiveIlvl >= hardFloor then
+        return true
+    end
+
+    return false
+end
+
+-- Returns the expansion bucket used for filtering.
+-- Current-season legacy dungeon gear can optionally be treated as current expansion.
+local function GetFilterExpansionID(itemID, itemLink, expansionID, baseItemLevel, classID, equipLoc, bag, slot)
+    if not expansionID then
+        return nil
+    end
+
+    if LegacyVendorDB and LegacyVendorDB.expansionSellAllMode then
+        if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItemLevel, classID, equipLoc, bag, slot) then
+            return addon.CURRENT_EXPANSION
+        end
+    end
+
+    return expansionID
 end
 
 -- Check if item should be sold
@@ -474,6 +636,32 @@ local function ShouldSellItem(bag, slot)
     local sellPrice = itemInfo[11]
     local classID = itemInfo[12]        -- Item class ID (Armor, Weapon, Consumable, etc.)
     local subClassID = itemInfo[13]     -- Item subclass ID
+
+    local expansionID = GetItemExpansionID(itemID)
+    if not expansionID then
+        DebugPrint("Could not determine expansion:", itemLink)
+        return false
+    end
+
+    local filterExpansionID = GetFilterExpansionID(itemID, itemLink, expansionID, itemInfo[4], classID, equipLoc, bag, slot)
+    if not filterExpansionID then
+        DebugPrint("Could not determine filter expansion:", itemLink)
+        return false
+    end
+
+    -- === STRICT SEASONAL PROTECTION (hard stop) ===
+    -- When enabled, this check runs before every other sell filter and immediately
+    -- blocks current-season scaled legacy dungeon gear.
+    if db.strictSeasonalProtection ~= false then
+        if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, itemInfo[4], classID, equipLoc, bag, slot) then
+            -- Explicit opt-in: if current expansion is checked in meta sell-all mode,
+            -- allow current-season dungeon items to flow through as current expansion.
+            if not (db.expansionSellAllMode and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
+                DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
+                return false
+            end
+        end
+    end
     
     -- No sell price = can't sell
     if not sellPrice or sellPrice == 0 then 
@@ -487,75 +675,85 @@ local function ShouldSellItem(bag, slot)
         return true, itemLink, itemCount, sellPrice * itemCount
     end
     
-    -- === FILTER 1: RARITY (Quality) ===
-    if db.rarities and db.rarities[quality] ~= nil then
-        if not db.rarities[quality] then
+    -- === FILTER 1: EXPANSION ===
+    if not db.expansions[filterExpansionID] then
+        DebugPrint("Expansion disabled:", filterExpansionID, itemLink)
+        return false
+    end
+
+    local expansionProfile = db.expansionProfiles and db.expansionProfiles[filterExpansionID]
+    local useDetailedFilters = expansionProfile and expansionProfile.useDetailedFilters
+
+    local activeRarities = (useDetailedFilters and expansionProfile.rarities) or db.rarities
+    local activeBindTypes = (useDetailedFilters and expansionProfile.bindTypes) or {
+        bop = db.sellBoP,
+        boe = db.sellBoE,
+        unbound = db.sellUnbound,
+    }
+    local activeEquipSlots = (useDetailedFilters and expansionProfile.equipSlots) or db.equipSlots
+    local activeItemTypes = (useDetailedFilters and expansionProfile.itemTypes) or db.itemTypes
+    local activeFilterBySource = (useDetailedFilters and expansionProfile.filterBySource) or db.filterBySource
+    local activeItemSources = (useDetailedFilters and expansionProfile.itemSources) or db.itemSources
+    local activeOnlyLowerIlvl = (useDetailedFilters and expansionProfile.onlySellLowerIlvl) or db.onlySellLowerIlvl
+
+    local function PassesSourceFilter()
+        if not activeFilterBySource then
+            return true
+        end
+
+        local itemSource = GetItemSource(itemID, bag, slot)
+        DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
+
+        if activeItemSources and activeItemSources[itemSource] ~= nil then
+            if not activeItemSources[itemSource] then
+                DebugPrint("Item source not enabled:", itemSource, itemLink)
+                return false
+            end
+        elseif itemSource == "unknown" then
+            if activeItemSources and activeItemSources["unknown"] == false then
+                DebugPrint("Unknown source not enabled:", itemLink)
+                return false
+            end
+        end
+
+        return true
+    end
+
+    -- Meta expansion mode: checked expansion means sell all from that expansion unless
+    -- this expansion explicitly uses detailed nested filters.
+    if db.expansionSellAllMode and not useDetailedFilters then
+        if not PassesSourceFilter() then
+            return false
+        end
+        DebugPrint("Meta expansion sell-all matched:", filterExpansionID, itemLink)
+        return true, itemLink, itemCount, sellPrice * itemCount
+    end
+
+    -- === FILTER 2: RARITY (Quality) ===
+    if activeRarities and activeRarities[quality] ~= nil then
+        if not activeRarities[quality] then
             DebugPrint("Rarity not enabled:", quality, itemLink)
             return false
         end
     end
-    
-    -- === FILTER 2: BIND STATUS ===
+
+    -- === FILTER 3: BIND STATUS ===
     local bindStatus = GetItemBindStatus(bag, slot, itemID)
     DebugPrint("Bind status for", itemLink, ":", bindStatus or "nil")
-    
+
     local bindAllowed = false
-    if bindStatus == "bop" and db.sellBoP then
+    if bindStatus == "bop" and activeBindTypes.bop then
         bindAllowed = true
-    elseif bindStatus == "boe" and db.sellBoE then
+    elseif bindStatus == "boe" and activeBindTypes.boe then
         bindAllowed = true
-    elseif bindStatus == "unbound" and db.sellUnbound then
+    elseif bindStatus == "unbound" and activeBindTypes.unbound then
         bindAllowed = true
-    elseif bindStatus == "bou" and db.sellUnbound then
-        -- Bind on Use items treated as unbound
+    elseif bindStatus == "bou" and activeBindTypes.unbound then
         bindAllowed = true
     end
-    
+
     if not bindAllowed then
         DebugPrint("Bind type not enabled:", bindStatus, itemLink)
-        return false
-    end
-    
-    -- === FILTER 3: EXPANSION ===
-    local expansionID = GetItemExpansionID(itemID)
-    if not expansionID then 
-        DebugPrint("Could not determine expansion:", itemLink)
-        return false 
-    end
-    
-    -- === SEASONAL M+ PROTECTION ===
-    -- Items from legacy dungeons in the current seasonal M0/M+ rotation carry old
-    -- expansion IDs but drop at current-tier ilvl. They must never be auto-sold.
-    if expansionID < addon.CURRENT_EXPANSION then
-    
-        -- Method 1: Instance table (primary — reliable for ALL expansions incl. WoD/Legion
-        -- whose pre-squish ilvl peaks may overlap with or exceed current content ilvl)
-        if C_ItemSourceInfo and C_ItemSourceInfo.GetItemSourceInfo then
-            local sourceInfo = C_ItemSourceInfo.GetItemSourceInfo(itemID)
-            if sourceInfo and sourceInfo.instanceID then
-                DebugPrint("Item source instanceID:", sourceInfo.instanceID, "for", itemLink)
-                if addon.SEASONAL_LEGACY_DUNGEON_INSTANCES[sourceInfo.instanceID] then
-                    DebugPrint("Skipping seasonal M+ item:", itemLink)
-                    return false
-                end
-            end
-        end
-        
-        -- Method 2: Per-expansion ilvl ceiling (secondary — automatic but unreliable for
-        -- WoD/Legion; reliable for Classic-MoP and post-squish BFA/SL/DF)
-        local ilvlCeiling = addon.EXPANSION_ILVL_CEILING[expansionID]
-        if ilvlCeiling then
-            local effectiveIlvl = GetDetailedItemLevelInfo and GetDetailedItemLevelInfo(itemLink)
-            if effectiveIlvl and effectiveIlvl > ilvlCeiling then
-                DebugPrint("Skipping scaled M+ item (ilvl", effectiveIlvl, "> ceiling", ilvlCeiling, "):", itemLink)
-                return false
-            end
-        end
-    end
-    
-    -- Check if expansion is enabled for selling
-    if not db.expansions[expansionID] then
-        DebugPrint("Expansion disabled:", expansionID, itemLink)
         return false
     end
     
@@ -564,8 +762,8 @@ local function ShouldSellItem(bag, slot)
     
     if isEquipment then
         -- Check if this equipment slot is enabled
-        if db.equipSlots and db.equipSlots[equipLoc] ~= nil then
-            if not db.equipSlots[equipLoc] then
+        if activeEquipSlots and activeEquipSlots[equipLoc] ~= nil then
+            if not activeEquipSlots[equipLoc] then
                 DebugPrint("Equipment slot not enabled:", equipLoc, itemLink)
                 return false
             end
@@ -574,13 +772,13 @@ local function ShouldSellItem(bag, slot)
     
     -- === FILTER 5: ITEM TYPES (for non-equippable items) ===
     if not isEquipment then
-        -- For consumables, reagents, etc. - check if this item type is enabled
-        if db.itemTypes and classID and db.itemTypes[classID] ~= nil then
-            if not db.itemTypes[classID] then
+        -- Consumables are controlled via source filters + bind filters to avoid duplicate controls.
+        if classID ~= 0 and activeItemTypes and classID and activeItemTypes[classID] ~= nil then
+            if not activeItemTypes[classID] then
                 DebugPrint("Item type not enabled:", classID, "(class ID)", itemLink)
                 return false
             end
-        elseif classID and classID ~= 2 and classID ~= 4 then
+        elseif classID and classID ~= 0 and classID ~= 2 and classID ~= 4 then
             -- Non-equippable item with unrecognized classID — skip by default.
             -- classID 2 = Weapon and 4 = Armor are handled by equipment slot filters.
             DebugPrint("Unrecognized non-equipment item type, skipping:", classID, itemLink)
@@ -596,7 +794,7 @@ local function ShouldSellItem(bag, slot)
     end
 
     -- === FILTER 6: ONLY SELL IF LOWER ILVL THAN EQUIPPED ===
-    if db.onlySellLowerIlvl and isEquipment then
+    if activeOnlyLowerIlvl and isEquipment then
         local slotIDs = addon.EQUIP_LOC_TO_SLOT[equipLoc]
         if slotIDs then
             local dominated = false
@@ -630,26 +828,11 @@ local function ShouldSellItem(bag, slot)
     end
     
     -- === FILTER 7: ITEM SOURCE (dungeon, raid, profession, vendor, etc.) ===
-    if db.filterBySource then
-        local itemSource = GetItemSource(itemID, bag, slot)
-        DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
-        
-        -- Check if this source is enabled
-        if db.itemSources and db.itemSources[itemSource] ~= nil then
-            if not db.itemSources[itemSource] then
-                DebugPrint("Item source not enabled:", itemSource, itemLink)
-                return false
-            end
-        elseif itemSource == "unknown" then
-            -- Unknown source - check if unknown is enabled
-            if db.itemSources and db.itemSources["unknown"] == false then
-                DebugPrint("Unknown source not enabled:", itemLink)
-                return false
-            end
-        end
+    if not PassesSourceFilter() then
+        return false
     end
     
-    DebugPrint("Will sell:", itemLink, "Expansion:", expansionID, "Quality:", quality, "Bind:", bindStatus, "Class:", classID)
+    DebugPrint("Will sell:", itemLink, "Expansion:", filterExpansionID, "Quality:", quality, "Bind:", bindStatus, "Class:", classID)
     return true, itemLink, itemCount, sellPrice * itemCount
 end
 
@@ -688,17 +871,221 @@ local function ScanBags()
 end
 
 -- ==========================================
--- BAG ITEM HIGHLIGHTING (DISABLED - NEEDS MORE TESTING)
+-- BAG ITEM HIGHLIGHTING
 -- ==========================================
--- This feature is temporarily disabled as it causes issues on some WoW versions
--- The highlighting code has been commented out for stability
+
+local activeBagHighlights = {}
+local highlightUpdatePending = false
+
+local function ClearBagHighlights()
+    for button, hl in pairs(activeBagHighlights) do
+        if hl and hl.driver then
+            hl.driver:SetScript("OnUpdate", nil)
+        end
+        if hl and hl.ants then
+            for _, ant in ipairs(hl.ants) do
+                ant:Hide()
+            end
+        end
+        if hl and hl.fill then
+            hl.fill:Hide()
+        end
+    end
+    wipe(activeBagHighlights)
+end
+
+local function GetButtonBagAndSlot(button)
+    if not button then
+        return nil, nil
+    end
+
+    local bag = nil
+    local slot = nil
+
+    if button.GetBagID then
+        bag = button:GetBagID()
+    end
+    if not bag and button.bagID ~= nil then
+        bag = button.bagID
+    end
+
+    slot = button:GetID()
+    if not slot and button.slot then
+        slot = button.slot
+    end
+
+    return bag, slot
+end
+
+local function LayoutMarchingAnts(button, hl, phase, count)
+    local w = (button:GetWidth() or 36) + 8
+    local h = (button:GetHeight() or 36) + 8
+    local halfW = w * 0.5
+    local halfH = h * 0.5
+    local perimeter = (2 * w) + (2 * h)
+
+    for i = 1, count do
+        local ant = hl.ants[i]
+        local t = ((i - 1) / count) + phase
+        t = t - math.floor(t)
+        local d = t * perimeter
+        local x, y
+
+        if d < w then
+            x = -halfW + d
+            y = halfH
+        elseif d < (w + h) then
+            x = halfW
+            y = halfH - (d - w)
+        elseif d < (2 * w + h) then
+            x = halfW - (d - (w + h))
+            y = -halfH
+        else
+            x = -halfW
+            y = -halfH + (d - (2 * w + h))
+        end
+
+        ant:ClearAllPoints()
+        ant:SetPoint("CENTER", button, "CENTER", x, y)
+    end
+end
+
+local function ApplyHighlight(button)
+    if not button then
+        return
+    end
+
+    local hl = button.LegacyVendorHighlight
+    if not hl then
+        hl = {}
+
+        hl.fill = button:CreateTexture(nil, "OVERLAY")
+        hl.fill:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+        hl.fill:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+        hl.fill:SetBlendMode("ADD")
+
+        hl.ants = {}
+        local antCount = 34
+        hl.antCount = antCount
+        for i = 1, antCount do
+            local ant = button:CreateTexture(nil, "OVERLAY")
+            ant:SetSize(3, 3)
+            ant:SetTexture("Interface\\Buttons\\WHITE8X8")
+            ant:SetBlendMode("ADD")
+            hl.ants[i] = ant
+        end
+
+        hl.driver = CreateFrame("Frame", nil, button)
+        hl.phase = 0
+        hl.accum = 0
+
+        button.LegacyVendorHighlight = hl
+    end
+
+    local color = (LegacyVendorDB and LegacyVendorDB.highlightColor) or { r = 1, g = 0.2, b = 0.2, a = 0.8 }
+    local r = color.r or 1
+    local g = color.g or 0.2
+    local b = color.b or 0.2
+    local a = color.a or 0.8
+
+    hl.fill:SetColorTexture(r, g, b, math.min(0.40, math.max(0.20, a * 0.45)))
+
+    for _, ant in ipairs(hl.ants) do
+        ant:SetVertexColor(r, g, b, 1)
+        ant:Show()
+    end
+
+    hl.fill:Show()
+
+    LayoutMarchingAnts(button, hl, hl.phase or 0, hl.antCount)
+    hl.driver:SetScript("OnUpdate", function(_, elapsed)
+        hl.accum = (hl.accum or 0) + elapsed
+        if hl.accum < 0.03 then
+            return
+        end
+
+        local dt = hl.accum
+        hl.accum = 0
+        hl.phase = ((hl.phase or 0) + (dt * 0.9)) % 1
+        LayoutMarchingAnts(button, hl, hl.phase, hl.antCount)
+    end)
+
+    activeBagHighlights[button] = hl
+end
+
+local function FindButtonForBagSlot(bag, slot)
+    -- Midnight/Retail helper for direct mapping.
+    if ContainerFrameUtil_GetItemButtonAndContainer then
+        local button = ContainerFrameUtil_GetItemButtonAndContainer(bag, slot)
+        if button then
+            return button
+        end
+    end
+
+    -- Modern bag frames use itemButtonPool.
+    if ContainerFrameUtil_EnumerateContainerFrames then
+        for containerFrame in ContainerFrameUtil_EnumerateContainerFrames() do
+            if containerFrame and containerFrame.itemButtonPool and containerFrame.itemButtonPool.EnumerateActive then
+                for button in containerFrame.itemButtonPool:EnumerateActive() do
+                    local b, s = GetButtonBagAndSlot(button)
+                    if b == bag and s == slot then
+                        return button
+                    end
+                end
+            end
+        end
+    end
+
+    -- Fallback for alternate container implementations.
+    for name, obj in pairs(_G) do
+        if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
+            if name:find("ContainerFrame") and name:find("Item") then
+                local b, s = GetButtonBagAndSlot(obj)
+                if b == bag and s == slot then
+                    return obj
+                end
+            end
+        end
+    end
+
+    return nil
+end
 
 local function UpdateBagHighlights()
-    -- Disabled for now
+    ClearBagHighlights()
+
+    if not LegacyVendorDB or not LegacyVendorDB.enabled or not LegacyVendorDB.highlightItems then
+        return
+    end
+
+    if not MerchantFrame or not MerchantFrame:IsShown() then
+        return
+    end
+
+    for bag = 0, NUM_BAG_SLOTS do
+        local numSlots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local shouldSell = ShouldSellItem(bag, slot)
+            if shouldSell then
+                local button = FindButtonForBagSlot(bag, slot)
+                if button and button:IsShown() then
+                    ApplyHighlight(button)
+                end
+            end
+        end
+    end
 end
 
 local function ScheduleHighlightUpdate()
-    -- Disabled for now
+    if highlightUpdatePending then
+        return
+    end
+
+    highlightUpdatePending = true
+    C_Timer.After(0.05, function()
+        highlightUpdatePending = false
+        UpdateBagHighlights()
+    end)
 end
 
 addon.UpdateBagHighlights = UpdateBagHighlights
@@ -870,7 +1257,15 @@ local function OnEvent(self, event, ...)
                         LegacyVendorDB.itemTypes[typeID] = typeData.enabled
                     end
                 end
+                -- Ensure all item sources have settings
+                for sourceKey, sourceData in pairs(addon.ITEM_SOURCES) do
+                    if LegacyVendorDB.itemSources[sourceKey] == nil then
+                        LegacyVendorDB.itemSources[sourceKey] = sourceData.enabled
+                    end
+                end
             end
+
+            EnsureExpansionProfiles(LegacyVendorDB)
             
             -- Show loaded message with version info
             local versionInfo = addon.compatInfo or "Retail"
@@ -882,6 +1277,7 @@ local function OnEvent(self, event, ...)
         if LegacyVendorDB and LegacyVendorDB.enabled then
             -- Show/update the sell button on merchant frame
             addon.UpdateMerchantButton()
+            addon.ScheduleHighlightUpdate()
             
             -- Only auto-sell if enabled (disabled by default for API safety)
             if LegacyVendorDB.autoSell then
@@ -903,6 +1299,15 @@ local function OnEvent(self, event, ...)
         itemsToSell = {}
         if addon.sellButton then
             addon.sellButton:Hide()
+        end
+        if addon.UpdateBagHighlights then
+            addon.UpdateBagHighlights()
+        end
+
+    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" then
+        if LegacyVendorDB and LegacyVendorDB.enabled and MerchantFrame and MerchantFrame:IsShown() then
+            addon.UpdateMerchantButton()
+            addon.ScheduleHighlightUpdate()
         end
     end
 end
@@ -998,6 +1403,8 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv highlight - Toggle bag highlighting")
         Print("  /lv reset - Reset settings to default")
         Print("  /lv debug - Toggle debug mode")
+        Print("  /lv strict - Toggle strict seasonal protection")
+        Print("  /lv meta - Toggle expansion sell-all mode")
         
     elseif msg == "toggle" then
         LegacyVendorDB.enabled = not LegacyVendorDB.enabled
@@ -1066,6 +1473,28 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+
+    elseif msg == "strict" then
+        LegacyVendorDB.strictSeasonalProtection = not (LegacyVendorDB.strictSeasonalProtection ~= false)
+        if LegacyVendorDB.strictSeasonalProtection then
+            Print("Strict seasonal protection |cFF00FF00enabled|r - current-season scaled legacy dungeon items are always kept.")
+        else
+            Print("Strict seasonal protection |cFFFF0000disabled|r - fallback protections still apply, but rigid hard-stop mode is off.")
+        end
+        if addon.UpdateMerchantButton and MerchantFrame and MerchantFrame:IsShown() then
+            addon.UpdateMerchantButton()
+        end
+
+    elseif msg == "meta" then
+        LegacyVendorDB.expansionSellAllMode = not (LegacyVendorDB.expansionSellAllMode ~= false)
+        if LegacyVendorDB.expansionSellAllMode then
+            Print("Expansion meta mode |cFF00FF00enabled|r - checked expansions sell everything from that expansion.")
+        else
+            Print("Expansion meta mode |cFFFF0000disabled|r - detailed filters are used instead.")
+        end
+        if addon.UpdateMerchantButton and MerchantFrame and MerchantFrame:IsShown() then
+            addon.UpdateMerchantButton()
+        end
         
     elseif msg == "highlight" then
         LegacyVendorDB.highlightItems = not LegacyVendorDB.highlightItems
@@ -1089,7 +1518,15 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
             local exp = addon.EXPANSIONS[i]
             if exp then
                 local status = LegacyVendorDB.expansions[i] and "|cFF00FF00[SELL]|r" or "|cFFFF0000[KEEP]|r"
-                print(string.format("  %d. %s %s", i, exp.name, status))
+                local profile = LegacyVendorDB.expansionProfiles and LegacyVendorDB.expansionProfiles[i]
+                local mode = "global filters"
+                if LegacyVendorDB.expansionSellAllMode and LegacyVendorDB.expansions[i] then
+                    mode = "sell all"
+                end
+                if profile and profile.useDetailedFilters then
+                    mode = "detailed filters"
+                end
+                print(string.format("  %d. %s %s (%s)", i, exp.name, status, mode))
             end
         end
         Print("Use '/lv exp <number>' to toggle an expansion.")
