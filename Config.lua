@@ -392,7 +392,7 @@ end
 -- Alternative simple frame-based config for compatibility
 local function CreateSimpleConfig()
     local configFrame = CreateFrame("Frame", "LegacyVendorConfigFrame", UIParent, "BasicFrameTemplateWithInset")
-    configFrame:SetSize(480, 620)
+    configFrame:SetSize(480, 670)
     configFrame:SetPoint("CENTER")
     configFrame:SetMovable(true)
     configFrame:EnableMouse(true)
@@ -406,16 +406,69 @@ local function CreateSimpleConfig()
     configFrame.title:SetPoint("TOP", configFrame.TitleBg, "TOP", 0, -3)
     configFrame.title:SetText("LegacyVendor Settings")
 
-    local scrollFrame = CreateFrame("ScrollFrame", nil, configFrame, "UIPanelScrollFrameTemplate")
     local insetFrame = configFrame.Inset or configFrame
     local insetOffsetT = configFrame.Inset and -5 or -32
     local insetOffsetB = configFrame.Inset and 5 or 8
-    scrollFrame:SetPoint("TOPLEFT", insetFrame, "TOPLEFT", 5, insetOffsetT)
-    scrollFrame:SetPoint("BOTTOMRIGHT", insetFrame, "BOTTOMRIGHT", -25, insetOffsetB)
+
+    -- Active filter summary bar (top)
+    local topSummaryFrame = CreateFrame("Frame", nil, configFrame)
+    topSummaryFrame:SetPoint("TOPLEFT", insetFrame, "TOPLEFT", 8, insetOffsetT - 1)
+    topSummaryFrame:SetPoint("TOPRIGHT", insetFrame, "TOPRIGHT", -8, insetOffsetT - 1)
+    topSummaryFrame:SetHeight(20)
+    local topSummaryBgTex = topSummaryFrame:CreateTexture(nil, "BACKGROUND")
+    topSummaryBgTex:SetAllPoints()
+    topSummaryBgTex:SetColorTexture(0.02, 0.15, 0.02, 0.85)
+    local topSummaryText = topSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    topSummaryText:SetPoint("LEFT", topSummaryFrame, "LEFT", 6, 0)
+    topSummaryText:SetPoint("RIGHT", topSummaryFrame, "RIGHT", -6, 0)
+    topSummaryText:SetJustifyH("LEFT")
+    topSummaryText:SetWordWrap(false)
+
+    -- Search bar
+    local searchFrame = CreateFrame("Frame", nil, configFrame)
+    searchFrame:SetPoint("TOPLEFT", topSummaryFrame, "BOTTOMLEFT", 0, -3)
+    searchFrame:SetPoint("TOPRIGHT", topSummaryFrame, "BOTTOMRIGHT", 0, -3)
+    searchFrame:SetHeight(22)
+    local searchFrameBg = searchFrame:CreateTexture(nil, "BACKGROUND")
+    searchFrameBg:SetAllPoints()
+    searchFrameBg:SetColorTexture(0.06, 0.06, 0.06, 0.95)
+    local searchLabel = searchFrame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    searchLabel:SetPoint("LEFT", searchFrame, "LEFT", 26, 0)
+    searchLabel:SetText("|cFF888888Search options...|r")
+    local searchIcon = searchFrame:CreateTexture(nil, "ARTWORK")
+    searchIcon:SetSize(14, 14)
+    searchIcon:SetPoint("LEFT", searchFrame, "LEFT", 5, 0)
+    searchIcon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+    local searchBox = CreateFrame("EditBox", nil, searchFrame)
+    searchBox:SetFontObject(ChatFontNormal)
+    searchBox:SetPoint("LEFT", searchFrame, "LEFT", 24, 0)
+    searchBox:SetPoint("RIGHT", searchFrame, "RIGHT", -8, 0)
+    searchBox:SetHeight(18)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetMaxLetters(64)
+
+    -- Scroll frame (anchored below search bar)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, configFrame, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", searchFrame, "BOTTOMLEFT", -3, -3)
+    scrollFrame:SetPoint("BOTTOMRIGHT", insetFrame, "BOTTOMRIGHT", -25, insetOffsetB + 26)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetSize(430, 2000)
     scrollFrame:SetScrollChild(content)
+
+    -- Active filter summary bar (bottom)
+    local bottomSummaryFrame = CreateFrame("Frame", nil, configFrame)
+    bottomSummaryFrame:SetPoint("TOPLEFT", scrollFrame, "BOTTOMLEFT", 3, -3)
+    bottomSummaryFrame:SetPoint("TOPRIGHT", scrollFrame, "BOTTOMRIGHT", 25, -3)
+    bottomSummaryFrame:SetHeight(20)
+    local bottomSummaryBgTex = bottomSummaryFrame:CreateTexture(nil, "BACKGROUND")
+    bottomSummaryBgTex:SetAllPoints()
+    bottomSummaryBgTex:SetColorTexture(0.02, 0.15, 0.02, 0.85)
+    local bottomSummaryText = bottomSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bottomSummaryText:SetPoint("LEFT", bottomSummaryFrame, "LEFT", 6, 0)
+    bottomSummaryText:SetPoint("RIGHT", bottomSummaryFrame, "RIGHT", -6, 0)
+    bottomSummaryText:SetJustifyH("LEFT")
+    bottomSummaryText:SetWordWrap(false)
 
     if addon.EnsureExpansionProfiles then
         addon.EnsureExpansionProfiles(LegacyVendorDB)
@@ -462,6 +515,101 @@ local function CreateSimpleConfig()
             addon.configFrame:Show()
         end
     end
+
+    -- Checkbox registry for search filtering
+    local allCheckboxEntries = {}
+
+    local function StripColorCodes(s)
+        return (s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    end
+
+    local function FilterCheckboxes(searchText)
+        local txt = (searchText or ""):lower():match("^%s*(.-)%s*$") or ""
+        for _, entry in ipairs(allCheckboxEntries) do
+            if txt == "" then
+                entry.frame:Show()
+            else
+                local clean = StripColorCodes(entry.label):lower()
+                entry.frame:SetShown(clean:find(txt, 1, true) ~= nil)
+            end
+        end
+    end
+
+    local function BuildActiveSummary()
+        if not LegacyVendorDB then return "|cFF44FF44—|r" end
+        local parts = {}
+        local metaOn = LegacyVendorDB.expansionSellAllMode ~= false
+
+        -- Expansions: label changes based on meta mode
+        local expNames = {}
+        local maxExp = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION or 0
+        for i = 0, maxExp do
+            if LegacyVendorDB.expansions and LegacyVendorDB.expansions[i] then
+                local exp = addon.EXPANSIONS and addon.EXPANSIONS[i]
+                if exp then table.insert(expNames, exp.short or exp.name) end
+            end
+        end
+        if #expNames > 0 then
+            if metaOn then
+                -- Meta ON: checked expansion = sell all from it
+                table.insert(parts, "|cFF44FF44Sell-all:|r " .. table.concat(expNames, " "))
+            else
+                -- Meta OFF: checked expansion only enables the bucket; detailed filters still gate each item
+                table.insert(parts, "|cFFFFAA00Detailed:|r " .. table.concat(expNames, " "))
+            end
+        else
+            table.insert(parts, "|cFFFF4444No expansions active|r")
+        end
+
+        -- Rarities (from currently-viewed profile, informational only)
+        local rarNames = {}
+        local expID = LegacyVendorDB.selectedExpansionProfileID or 0
+        local profile = LegacyVendorDB.expansionProfiles and LegacyVendorDB.expansionProfiles[expID]
+        if profile and profile.rarities then
+            for rarID = 0, 7 do
+                if profile.rarities[rarID] then
+                    local rar = addon.RARITIES and addon.RARITIES[rarID]
+                    if rar then table.insert(rarNames, rar.name:sub(1, 3)) end
+                end
+            end
+        end
+        if #rarNames > 0 then
+            table.insert(parts, "Rar: " .. table.concat(rarNames, "/"))
+        end
+
+        -- Global flags
+        local flags = {}
+        if LegacyVendorDB.sellGray then table.insert(flags, "+Grays") end
+        if LegacyVendorDB.autoSell then table.insert(flags, "Auto") end
+        if LegacyVendorDB.strictSeasonalProtection ~= false then table.insert(flags, "M+Prot") end
+        if #flags > 0 then
+            table.insert(parts, table.concat(flags, " · "))
+        end
+
+        return "|cFF44FF44" .. table.concat(parts, "  ·  ") .. "|r"
+    end
+
+    local function RefreshSummary()
+        local s = BuildActiveSummary()
+        topSummaryText:SetText(s)
+        bottomSummaryText:SetText(s)
+    end
+
+    -- Wire up search box scripts
+    searchBox:SetScript("OnTextChanged", function(self)
+        local txt = self:GetText()
+        searchLabel:SetShown(txt == "")
+        FilterCheckboxes(txt)
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+        searchLabel:Show()
+        FilterCheckboxes("")
+    end)
+    searchBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
 
     local yOffset = -10
     local col2_col = 0
@@ -540,8 +688,10 @@ local function CreateSimpleConfig()
         cb:SetScript("OnClick", function(self)
             setValue(self:GetChecked())
             if refreshOnChange then RefreshButton() end
+            RefreshSummary()
         end)
         yOffset = yOffset - 26
+        table.insert(allCheckboxEntries, { frame = cb, label = label })
         return cb
     end
 
@@ -557,6 +707,7 @@ local function CreateSimpleConfig()
         cb:SetScript("OnClick", function(self)
             setValue(self:GetChecked())
             if refreshOnChange then RefreshButton() end
+            RefreshSummary()
         end)
         if col2_col == 0 then
             col2_col = 1
@@ -564,6 +715,7 @@ local function CreateSimpleConfig()
             yOffset = yOffset - 26
             col2_col = 0
         end
+        table.insert(allCheckboxEntries, { frame = cb, label = label })
         return cb
     end
 
@@ -927,6 +1079,7 @@ local function CreateSimpleConfig()
     yOffset = yOffset - 30
 
     content:SetHeight(math.abs(yOffset) + 50)
+    RefreshSummary()
 
     addon.configFrame = configFrame
     return configFrame

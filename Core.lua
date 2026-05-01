@@ -910,7 +910,10 @@ local function GetButtonBagAndSlot(button)
     end
 
     slot = button:GetID()
-    if not slot and button.slot then
+    if (not slot or slot == 0) and button.slotID ~= nil then
+        slot = button.slotID
+    end
+    if (not slot or slot == 0) and button.slot ~= nil then
         slot = button.slot
     end
 
@@ -1036,16 +1039,16 @@ local function FindButtonForBagSlot(bag, slot)
         end
     end
 
-    -- Fallback for alternate container implementations.
-    for name, obj in pairs(_G) do
-        if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
-            if name:find("ContainerFrame") and name:find("Item") then
-                local b, s = GetButtonBagAndSlot(obj)
-                if b == bag and s == slot then
-                    return obj
-                end
+    -- Addon-agnostic fallback: walk every WoW frame (catches ElvUI, Bagnon, ArkInventory, etc.).
+    local frame = EnumerateFrames()
+    while frame do
+        if frame.IsVisible and frame:IsVisible() then
+            local b, s = GetButtonBagAndSlot(frame)
+            if b == bag and s == slot then
+                return frame
             end
         end
+        frame = EnumerateFrames(frame)
     end
 
     return nil
