@@ -70,3 +70,43 @@ T.test("idempotent second pass leaves sources and version intact", function()
   T.eq(db.itemSources.dungeon, src_dungeon)
   T.eq(db.itemSources.raid, src_raid)
 end)
+
+T.test("SourceSkipped basic", function()
+  T.eq(addon.SourceSkipped({ consumable = true }, "consumable"), true)
+  T.eq(addon.SourceSkipped({ consumable = true }, "dungeon"), false)
+  T.eq(addon.SourceSkipped({}, nil), false)
+end)
+
+T.test("resolve uses global set by default", function()
+  local db = {
+    sellMode = "matching",
+    rarities = { [3] = true }, equipSlots = {}, itemTypes = {},
+    sellBoP = true, sellBoE = false, sellUnbound = false,
+    itemSources = { consumable = true }, onlySellLowerIlvl = false,
+    expansionProfiles = { [8] = { useDetailedFilters = false } },
+  }
+  local r = addon.ResolveActiveFilters(db, 8)
+  T.eq(r.usedOverride, false)
+  T.eq(r.rarities[3], true)
+  T.eq(r.itemSources.consumable, true)
+  T.eq(r.bindTypes.bop, true)
+end)
+
+T.test("resolve uses override when enabled in matching mode", function()
+  local db = {
+    sellMode = "matching",
+    rarities = { [3] = true }, equipSlots = {}, itemTypes = {},
+    sellBoP = true, itemSources = {}, onlySellLowerIlvl = false,
+    expansionProfiles = { [8] = {
+      useDetailedFilters = true,
+      rarities = { [4] = true }, equipSlots = {}, itemTypes = {},
+      bindTypes = { bop = true }, itemSources = { raid = true }, onlySellLowerIlvl = true,
+    } },
+  }
+  local r = addon.ResolveActiveFilters(db, 8)
+  T.eq(r.usedOverride, true)
+  T.eq(r.rarities[4], true)
+  T.eq(r.rarities[3], nil)
+  T.eq(r.itemSources.raid, true)
+  T.eq(r.onlyLowerIlvl, true)
+end)

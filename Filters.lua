@@ -43,3 +43,36 @@ function addon.MigrateDB(db)
   db.settingsSchemaVersion = addon.SCHEMA_VERSION
   return db
 end
+
+function addon.SourceSkipped(skipSet, source)
+  if not source or not skipSet then return false end
+  return skipSet[source] == true
+end
+
+function addon.ResolveActiveFilters(db, expansionID)
+  local mode = db.sellMode or "everything"
+  local profile = db.expansionProfiles and db.expansionProfiles[expansionID]
+  local useOverride = (mode == "matching") and profile and profile.useDetailedFilters == true
+
+  if useOverride then
+    return {
+      mode = mode, usedOverride = true,
+      rarities = profile.rarities or {},
+      equipSlots = profile.equipSlots or {},
+      itemTypes = profile.itemTypes or {},
+      bindTypes = profile.bindTypes or {},
+      itemSources = profile.itemSources or {},
+      onlyLowerIlvl = profile.onlySellLowerIlvl == true,
+    }
+  end
+
+  return {
+    mode = mode, usedOverride = false,
+    rarities = db.rarities or {},
+    equipSlots = db.equipSlots or {},
+    itemTypes = db.itemTypes or {},
+    bindTypes = { bop = db.sellBoP, boe = db.sellBoE, unbound = db.sellUnbound },
+    itemSources = db.itemSources or {},
+    onlyLowerIlvl = db.onlySellLowerIlvl == true,
+  }
+end
