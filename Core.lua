@@ -681,47 +681,26 @@ local function ShouldSellItem(bag, slot)
         return false
     end
 
-    local expansionProfile = db.expansionProfiles and db.expansionProfiles[filterExpansionID]
-    local useDetailedFilters = expansionProfile and expansionProfile.useDetailedFilters
-
-    local activeRarities = (useDetailedFilters and expansionProfile.rarities) or db.rarities
-    local activeBindTypes = (useDetailedFilters and expansionProfile.bindTypes) or {
-        bop = db.sellBoP,
-        boe = db.sellBoE,
-        unbound = db.sellUnbound,
-    }
-    local activeEquipSlots = (useDetailedFilters and expansionProfile.equipSlots) or db.equipSlots
-    local activeItemTypes = (useDetailedFilters and expansionProfile.itemTypes) or db.itemTypes
-    local activeFilterBySource = (useDetailedFilters and expansionProfile.filterBySource) or db.filterBySource
-    local activeItemSources = (useDetailedFilters and expansionProfile.itemSources) or db.itemSources
-    local activeOnlyLowerIlvl = (useDetailedFilters and expansionProfile.onlySellLowerIlvl) or db.onlySellLowerIlvl
+    local resolved = addon.ResolveActiveFilters(db, filterExpansionID)
+    local activeRarities = resolved.rarities
+    local activeBindTypes = resolved.bindTypes
+    local activeEquipSlots = resolved.equipSlots
+    local activeItemTypes = resolved.itemTypes
+    local activeOnlyLowerIlvl = resolved.onlyLowerIlvl
 
     local function PassesSourceFilter()
-        if not activeFilterBySource then
-            return true
-        end
-
+        if db.sellMode ~= "matching" then return true end
         local itemSource = GetItemSource(itemID, bag, slot)
         DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
-
-        if activeItemSources and activeItemSources[itemSource] ~= nil then
-            if not activeItemSources[itemSource] then
-                DebugPrint("Item source not enabled:", itemSource, itemLink)
-                return false
-            end
-        elseif itemSource == "unknown" then
-            if activeItemSources and activeItemSources["unknown"] == false then
-                DebugPrint("Unknown source not enabled:", itemLink)
-                return false
-            end
+        if addon.SourceSkipped(resolved.itemSources, itemSource) then
+            DebugPrint("Source skipped:", itemSource, itemLink)
+            return false
         end
-
         return true
     end
 
-    -- Meta expansion mode: checked expansion means sell all from that expansion unless
-    -- this expansion explicitly uses detailed nested filters.
-    if db.expansionSellAllMode and not useDetailedFilters then
+    -- Meta expansion mode: sell everything from enabled expansions.
+    if db.sellMode == "everything" then
         if not PassesSourceFilter() then
             return false
         end
@@ -1741,6 +1720,7 @@ local function OnEvent(self, event, ...)
                 end
             end
 
+            if addon.MigrateDB then addon.MigrateDB(LegacyVendorDB) end
             EnsureExpansionProfiles(LegacyVendorDB)
             
             -- Show loaded message with version info

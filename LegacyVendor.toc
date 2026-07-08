@@ -11,5 +11,6 @@
 ## X-Curse-Project-ID: XXXXXX
 
 Compat.lua
+Filters.lua
 Core.lua
 Config.lua
