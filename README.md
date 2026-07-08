@@ -2,7 +2,7 @@
 
 **Automatically sell Bind on Pickup items from legacy expansions when visiting a vendor.**
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.2.0-blue)
 ![WoW Version](https://img.shields.io/badge/WoW-Retail%20%7C%20Classic%20%7C%20Cataclysm-green)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -69,16 +69,29 @@ Legacy Vendor helps you keep your bags clean by automatically identifying and se
 
 ### Filter Logic
 
-All filters work as an **intersection (AND)**. An item must match ALL enabled criteria:
+First, choose your **sell mode** — one of two options:
+
+- **Sell everything from enabled expansions** — every BoP item from a checked expansion is sold. No further filter evaluation.
+- **Only sell items matching my filters** — items must also pass the global filter set (rarity, source, slot, type, bind) before selling.
+
+When in "matching" mode, all active filters work as an **intersection (AND)**. An item must match ALL enabled criteria:
 
 ```
 ✅ Expansion is enabled (e.g., WotLK)
+AND ✅ Sell mode is "Only sell items matching my filters"
 AND ✅ Rarity is enabled (e.g., Epic)
 AND ✅ Equipment slot is enabled (e.g., Head) OR Item type is enabled
+AND ✅ Item's source is NOT in the skip list (see below)
 AND ✅ Item is Bind on Pickup
 AND ✅ Item is not manually excluded
 = 💰 Item will be sold
 ```
+
+**Source skip list ("Don't sell from these sources"):** tick a source (e.g. Consumables) to *stop* selling items from that source. Unticked sources are allowed. This replaces the old master source toggle that could fail silently.
+
+The settings panel shows a plain-English summary of exactly what will sell and greys out filters that aren't currently in effect.
+
+**Advanced per-expansion overrides** are available via a collapsible "Advanced" section (off by default). When expanded, each enabled expansion can have its own filter set instead of using the global one.
 
 ## Configuration Options
 
@@ -89,6 +102,10 @@ AND ✅ Item is not manually excluded
 - **Show Sale Summary** - Display gold earned after selling
 - **Confirm Before Selling** - Show confirmation dialog
 - **Also Sell Gray Items** - Sell all gray items regardless of filters
+
+### Sell Mode
+- **Sell everything from enabled expansions** - All BoP items from checked expansions are sold; no filters applied.
+- **Only sell items matching my filters** - Items must pass the global filter set (rarity, source, slot, type, bind) to be sold.
 
 ### Expansion Filters
 Select which expansions to sell items from:
@@ -105,7 +122,9 @@ Select which expansions to sell items from:
 - The War Within
 - Midnight (Protected - cannot enable)
 
-### Rarity Filters
+### Global Filter Set (active when sell mode is "matching")
+
+#### Rarity Filters
 - Poor (Gray) ✅
 - Common (White)
 - Uncommon (Green) ✅
@@ -115,10 +134,10 @@ Select which expansions to sell items from:
 - Artifact (Protected)
 - Heirloom (Protected)
 
-### Equipment Slot Filters
+#### Equipment Slot Filters
 All armor and weapon slots can be individually toggled.
 
-### Non-Equippable Item Filters
+#### Non-Equippable Item Filters
 - Consumables
 - Containers (Bags)
 - Reagents
@@ -127,6 +146,12 @@ All armor and weapon slots can be individually toggled.
 - Quest Items
 - Keys
 - Miscellaneous
+
+#### Don't Sell From These Sources (skip list)
+Tick any source to exclude it from selling. Unticked sources are allowed. Sources include: Dungeons, Raids, Outdoor/World, Professions, Vendors, PvP, Reputation, Consumables, and Unknown.
+
+### Advanced Per-Expansion Overrides
+Expand the "Advanced" collapsible in the settings panel to configure a separate filter set for individual expansions, overriding the global set for that expansion only. Hidden by default.
 
 ## API Compatibility
 

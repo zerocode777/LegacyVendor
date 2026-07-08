@@ -5,6 +5,28 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-08
+
+### Changed
+- Simplified filtering: one clear choice — "Sell everything from enabled expansions" or
+  "Only sell items matching my filters". No more hidden meta/detailed modes.
+- Filters (rarity, source, slot, type, bind) are now one global set applied to every enabled
+  expansion. Per-expansion tuning moved to an optional "Advanced" section (off by default).
+- The settings panel now shows a plain-English summary of exactly what will sell, plus a detail
+  line, and greys out filters that aren't in effect.
+
+### Fixed
+- Source filtering now works as expected. Ticking a source under "Don't sell from these sources"
+  (e.g. Consumables) reliably stops those items from selling — previously the toggle could do
+  nothing. Fixes the reported inability to stop selling PvP potions / consumables.
+
+### Notes
+- Your existing settings are migrated automatically; nothing new will sell without you seeing it
+  in the summary. Use /lv reset to start fresh.
+- If you previously used source filtering, upgrading may conservatively skip a rarely-used source
+  (it only ever sells less, never more) — glance at the summary's "(skipping …)" note and re-enable
+  anything you want by unticking it under "Don't sell from these sources".
+
 ## [2.1.0] - 2026-04-30
 
 ### Added

@@ -222,6 +222,7 @@ local defaults = {
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
+    sellMode = "everything", -- "everything" | "matching" — single source of truth for sell mode
     expansionProfiles = {}, -- Per-expansion nested filter profiles
 }
 
@@ -581,7 +582,7 @@ local function GetFilterExpansionID(itemID, itemLink, expansionID, baseItemLevel
         return nil
     end
 
-    if LegacyVendorDB and LegacyVendorDB.expansionSellAllMode then
+    if LegacyVendorDB and LegacyVendorDB.sellMode == "everything" then
         if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItemLevel, classID, equipLoc, bag, slot) then
             return addon.CURRENT_EXPANSION
         end
@@ -656,7 +657,7 @@ local function ShouldSellItem(bag, slot)
         if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, itemInfo[4], classID, equipLoc, bag, slot) then
             -- Explicit opt-in: if current expansion is checked in meta sell-all mode,
             -- allow current-season dungeon items to flow through as current expansion.
-            if not (db.expansionSellAllMode and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
+            if not (db.sellMode == "everything" and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
                 DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
                 return false
             end
@@ -681,50 +682,29 @@ local function ShouldSellItem(bag, slot)
         return false
     end
 
-    local expansionProfile = db.expansionProfiles and db.expansionProfiles[filterExpansionID]
-    local useDetailedFilters = expansionProfile and expansionProfile.useDetailedFilters
-
-    local activeRarities = (useDetailedFilters and expansionProfile.rarities) or db.rarities
-    local activeBindTypes = (useDetailedFilters and expansionProfile.bindTypes) or {
-        bop = db.sellBoP,
-        boe = db.sellBoE,
-        unbound = db.sellUnbound,
-    }
-    local activeEquipSlots = (useDetailedFilters and expansionProfile.equipSlots) or db.equipSlots
-    local activeItemTypes = (useDetailedFilters and expansionProfile.itemTypes) or db.itemTypes
-    local activeFilterBySource = (useDetailedFilters and expansionProfile.filterBySource) or db.filterBySource
-    local activeItemSources = (useDetailedFilters and expansionProfile.itemSources) or db.itemSources
-    local activeOnlyLowerIlvl = (useDetailedFilters and expansionProfile.onlySellLowerIlvl) or db.onlySellLowerIlvl
+    -- Resolve against filterExpansionID (which GetFilterExpansionID may have redirected,
+    -- e.g. a current-season item remapped to CURRENT_EXPANSION), not the raw expansionID.
+    local resolved = addon.ResolveActiveFilters(db, filterExpansionID)
+    local activeRarities = resolved.rarities
+    local activeBindTypes = resolved.bindTypes
+    local activeEquipSlots = resolved.equipSlots
+    local activeItemTypes = resolved.itemTypes
+    local activeOnlyLowerIlvl = resolved.onlyLowerIlvl
 
     local function PassesSourceFilter()
-        if not activeFilterBySource then
-            return true
-        end
-
+        if db.sellMode ~= "matching" then return true end
         local itemSource = GetItemSource(itemID, bag, slot)
         DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
-
-        if activeItemSources and activeItemSources[itemSource] ~= nil then
-            if not activeItemSources[itemSource] then
-                DebugPrint("Item source not enabled:", itemSource, itemLink)
-                return false
-            end
-        elseif itemSource == "unknown" then
-            if activeItemSources and activeItemSources["unknown"] == false then
-                DebugPrint("Unknown source not enabled:", itemLink)
-                return false
-            end
+        if addon.SourceSkipped(resolved.itemSources, itemSource) then
+            DebugPrint("Source skipped:", itemSource, itemLink)
+            return false
         end
-
         return true
     end
 
-    -- Meta expansion mode: checked expansion means sell all from that expansion unless
-    -- this expansion explicitly uses detailed nested filters.
-    if db.expansionSellAllMode and not useDetailedFilters then
-        if not PassesSourceFilter() then
-            return false
-        end
+    -- "Everything" mode: sell all legacy items from enabled expansions.
+    -- Detailed filters (including source) intentionally do NOT apply here.
+    if db.sellMode == "everything" then
         DebugPrint("Meta expansion sell-all matched:", filterExpansionID, itemLink)
         return true, itemLink, itemCount, sellPrice * itemCount
     end
@@ -827,7 +807,9 @@ local function ShouldSellItem(bag, slot)
         end
     end
     
-    -- === FILTER 7: ITEM SOURCE (dungeon, raid, profession, vendor, etc.) ===
+    -- === FILTER 7: ITEM SOURCE (skip-list) ===
+    -- In "matching" mode, items whose source is in the skip-set (via addon.SourceSkipped)
+    -- are never sold; leaving the skip-set empty allows every source.
     if not PassesSourceFilter() then
         return false
     end
@@ -876,6 +858,42 @@ end
 
 local activeBagHighlights = {}
 local highlightUpdatePending = false
+local highlightRetryCount = 0
+local highlightRetryToken = 0
+
+local function StartHighlightRetries()
+    highlightRetryToken = highlightRetryToken + 1
+    highlightRetryCount = 0
+    local myToken = highlightRetryToken
+
+    local function Tick()
+        if myToken ~= highlightRetryToken then
+            return
+        end
+        if not LegacyVendorDB or not LegacyVendorDB.enabled or not LegacyVendorDB.highlightItems then
+            return
+        end
+        if not MerchantFrame or not MerchantFrame:IsShown() then
+            return
+        end
+
+        if addon and addon.ScheduleHighlightUpdate then
+            addon.ScheduleHighlightUpdate()
+        end
+
+        highlightRetryCount = highlightRetryCount + 1
+        if highlightRetryCount < 12 then
+            C_Timer.After(0.25, Tick)
+        end
+    end
+
+    Tick()
+end
+
+local function StopHighlightRetries()
+    highlightRetryToken = highlightRetryToken + 1
+    highlightRetryCount = 0
+end
 
 local function ClearBagHighlights()
     for button, hl in pairs(activeBagHighlights) do
@@ -889,6 +907,26 @@ local function ClearBagHighlights()
         end
         if hl and hl.fill then
             hl.fill:Hide()
+        end
+        if hl and hl.border and hl.border.SetVertexColor then
+            if hl.borderOrigColor then
+                hl.border:SetVertexColor(hl.borderOrigColor.r, hl.borderOrigColor.g, hl.borderOrigColor.b, hl.borderOrigColor.a)
+            else
+                hl.border:SetVertexColor(1, 1, 1, 1)
+            end
+            if hl.borderOrigShown == false and hl.border.Hide then
+                hl.border:Hide()
+            end
+        end
+        if hl and hl.icon and hl.icon.SetVertexColor then
+            if hl.iconOrigColor then
+                hl.icon:SetVertexColor(hl.iconOrigColor.r, hl.iconOrigColor.g, hl.iconOrigColor.b, hl.iconOrigColor.a)
+            else
+                hl.icon:SetVertexColor(1, 1, 1, 1)
+            end
+            if hl.iconOrigDesaturated ~= nil and hl.icon.SetDesaturated then
+                hl.icon:SetDesaturated(hl.iconOrigDesaturated)
+            end
         end
     end
     wipe(activeBagHighlights)
@@ -908,13 +946,69 @@ local function GetButtonBagAndSlot(button)
     if not bag and button.bagID ~= nil then
         bag = button.bagID
     end
-
-    slot = button:GetID()
-    if not slot and button.slot then
-        slot = button.slot
+    if bag == nil and button.BagID ~= nil then
+        bag = button.BagID
+    end
+    if bag == nil and button.bag ~= nil then
+        bag = button.bag
+    end
+    if bag == nil and button.GetSlotAndBagID then
+        local _, b = button:GetSlotAndBagID()
+        bag = b
+    end
+    if bag == nil and button.GetAttribute then
+        bag = button:GetAttribute("bag")
+            or button:GetAttribute("bagID")
+            or button:GetAttribute("bagid")
     end
 
-    return bag, slot
+    slot = button:GetID()
+    if (not slot or slot == 0) and button.GetSlotAndBagID then
+        local s = button:GetSlotAndBagID()
+        slot = s
+    end
+    if (not slot or slot == 0) and button.slotID ~= nil then
+        slot = button.slotID
+    end
+    if (not slot or slot == 0) and button.SlotID ~= nil then
+        slot = button.SlotID
+    end
+    if (not slot or slot == 0) and button.slot ~= nil then
+        slot = button.slot
+    end
+    if (not slot or slot == 0) and button.slotIndex ~= nil then
+        slot = button.slotIndex
+    end
+    if (slot == nil or slot == 0) and button.GetAttribute then
+        slot = button:GetAttribute("slot")
+            or button:GetAttribute("slotID")
+            or button:GetAttribute("slotid")
+    end
+
+    if (bag == nil or slot == nil or slot == 0) then
+        local itemLocation = nil
+        if button.GetItemLocation then
+            itemLocation = button:GetItemLocation()
+        elseif button.itemLocation then
+            itemLocation = button.itemLocation
+        end
+        if itemLocation then
+            if itemLocation.GetBagAndSlot then
+                local b, s = itemLocation:GetBagAndSlot()
+                if bag == nil then bag = b end
+                if slot == nil or slot == 0 then slot = s end
+            else
+                if bag == nil then
+                    bag = itemLocation.bagID or itemLocation.bag
+                end
+                if slot == nil or slot == 0 then
+                    slot = itemLocation.slotID or itemLocation.slotIndex or itemLocation.slot
+                end
+            end
+        end
+    end
+
+    return tonumber(bag), tonumber(slot)
 end
 
 local function LayoutMarchingAnts(button, hl, phase, count)
@@ -950,8 +1044,33 @@ local function LayoutMarchingAnts(button, hl, phase, count)
     end
 end
 
+local function IsLikelyItemButton(button)
+    if not button then
+        return false
+    end
+
+    if button.GetItemLocation or button.SlotID ~= nil or button.slotID ~= nil or button.BagID ~= nil or button.bagID ~= nil then
+        return true
+    end
+
+    if button.Icon or button.icon or button.Count or button.Cooldown or button.IconBorder then
+        return true
+    end
+
+    local name = button.GetName and button:GetName()
+    if type(name) == "string" and name:find("Item", 1, true) then
+        return true
+    end
+
+    return false
+end
+
 local function ApplyHighlight(button)
     if not button then
+        return
+    end
+
+    if not IsLikelyItemButton(button) then
         return
     end
 
@@ -959,25 +1078,59 @@ local function ApplyHighlight(button)
     if not hl then
         hl = {}
 
-        hl.fill = button:CreateTexture(nil, "OVERLAY")
-        hl.fill:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-        hl.fill:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+        -- Use a dedicated host frame above the item button so skin overlays (ElvUI/WindTools)
+        -- do not hide our highlight textures.
+        hl.host = CreateFrame("Frame", nil, button)
+        local iconRegion = button.Icon or button.icon
+        if iconRegion then
+            hl.host:SetPoint("TOPLEFT", iconRegion, "TOPLEFT", -1, 1)
+            hl.host:SetPoint("BOTTOMRIGHT", iconRegion, "BOTTOMRIGHT", 1, -1)
+        else
+            hl.host:SetAllPoints(button)
+        end
+        hl.host:SetFrameStrata("TOOLTIP")
+        local baseLevel = (button.GetFrameLevel and button:GetFrameLevel()) or 1
+        hl.host:SetFrameLevel(baseLevel + 20)
+        hl.host:EnableMouse(false)
+        if hl.host.SetIgnoreParentAlpha then
+            hl.host:SetIgnoreParentAlpha(true)
+        end
+
+        hl.fill = hl.host:CreateTexture(nil, "OVERLAY")
+        hl.fill:SetPoint("TOPLEFT", hl.host, "TOPLEFT", 0, 0)
+        hl.fill:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 0, 0)
         hl.fill:SetBlendMode("ADD")
 
         hl.ants = {}
         local antCount = 34
         hl.antCount = antCount
         for i = 1, antCount do
-            local ant = button:CreateTexture(nil, "OVERLAY")
+            local ant = hl.host:CreateTexture(nil, "OVERLAY")
             ant:SetSize(3, 3)
             ant:SetTexture("Interface\\Buttons\\WHITE8X8")
             ant:SetBlendMode("ADD")
             hl.ants[i] = ant
         end
 
-        hl.driver = CreateFrame("Frame", nil, button)
+        hl.driver = CreateFrame("Frame", nil, hl.host)
         hl.phase = 0
         hl.accum = 0
+
+        hl.border = button.IconBorder or button.iconBorder
+        if hl.border and hl.border.GetVertexColor then
+            local br, bg, bb, ba = hl.border:GetVertexColor()
+            hl.borderOrigColor = { r = br or 1, g = bg or 1, b = bb or 1, a = ba or 1 }
+            hl.borderOrigShown = hl.border.IsShown and hl.border:IsShown() or nil
+        end
+
+        hl.icon = button.Icon or button.icon
+        if hl.icon and hl.icon.GetVertexColor then
+            local ir, ig, ib, ia = hl.icon:GetVertexColor()
+            hl.iconOrigColor = { r = ir or 1, g = ig or 1, b = ib or 1, a = ia or 1 }
+            if hl.icon.IsDesaturated then
+                hl.iconOrigDesaturated = hl.icon:IsDesaturated()
+            end
+        end
 
         button.LegacyVendorHighlight = hl
     end
@@ -988,16 +1141,26 @@ local function ApplyHighlight(button)
     local b = color.b or 0.2
     local a = color.a or 0.8
 
-    hl.fill:SetColorTexture(r, g, b, math.min(0.40, math.max(0.20, a * 0.45)))
+    hl.fill:SetColorTexture(r, g, b, 0)
 
     for _, ant in ipairs(hl.ants) do
         ant:SetVertexColor(r, g, b, 1)
         ant:Show()
     end
 
-    hl.fill:Show()
+    if hl.border and hl.border.SetVertexColor then
+        if hl.borderOrigColor then
+            hl.border:SetVertexColor(hl.borderOrigColor.r, hl.borderOrigColor.g, hl.borderOrigColor.b, hl.borderOrigColor.a)
+        end
+    end
 
-    LayoutMarchingAnts(button, hl, hl.phase or 0, hl.antCount)
+    if hl.icon and hl.icon.SetVertexColor and hl.iconOrigColor then
+        hl.icon:SetVertexColor(hl.iconOrigColor.r, hl.iconOrigColor.g, hl.iconOrigColor.b, hl.iconOrigColor.a)
+    end
+
+    hl.fill:Hide()
+
+    LayoutMarchingAnts(hl.host, hl, hl.phase or 0, hl.antCount)
     hl.driver:SetScript("OnUpdate", function(_, elapsed)
         hl.accum = (hl.accum or 0) + elapsed
         if hl.accum < 0.03 then
@@ -1007,48 +1170,294 @@ local function ApplyHighlight(button)
         local dt = hl.accum
         hl.accum = 0
         hl.phase = ((hl.phase or 0) + (dt * 0.9)) % 1
-        LayoutMarchingAnts(button, hl, hl.phase, hl.antCount)
+        LayoutMarchingAnts(hl.host, hl, hl.phase, hl.antCount)
     end)
 
     activeBagHighlights[button] = hl
 end
 
-local function FindButtonForBagSlot(bag, slot)
-    -- Midnight/Retail helper for direct mapping.
-    if ContainerFrameUtil_GetItemButtonAndContainer then
-        local button = ContainerFrameUtil_GetItemButtonAndContainer(bag, slot)
-        if button then
-            return button
+local function IsBagSlotMatch(foundBag, foundSlot, targetBag, targetSlot)
+    if foundBag ~= targetBag then
+        return false
+    end
+    return foundSlot == targetSlot or (foundSlot and (foundSlot + 1) == targetSlot)
+end
+
+local function IsAddonLoadedSafe(name)
+    if not name then
+        return false
+    end
+    if C_AddOns and C_AddOns.IsAddOnLoaded then
+        return C_AddOns.IsAddOnLoaded(name)
+    end
+    if IsAddOnLoaded then
+        return IsAddOnLoaded(name)
+    end
+    return false
+end
+
+local function IsValidButtonCandidate(button, bag, slot)
+    if not IsLikelyItemButton(button) then
+        return false
+    end
+
+    local b, s = GetButtonBagAndSlot(button)
+    if not IsBagSlotMatch(b, s, bag, slot) then
+        return false
+    end
+
+    -- If both expose item links, ensure it is the exact bag-slot item.
+    local info = C_Container.GetContainerItemInfo(bag, slot)
+    local slotLink = info and info.hyperlink
+    if slotLink then
+        local buttonLink = button.itemLink or button.link or button.ItemLink or button.hyperlink
+        if buttonLink and buttonLink ~= slotLink then
+            return false
         end
     end
 
-    -- Modern bag frames use itemButtonPool.
-    if ContainerFrameUtil_EnumerateContainerFrames then
-        for containerFrame in ContainerFrameUtil_EnumerateContainerFrames() do
-            if containerFrame and containerFrame.itemButtonPool and containerFrame.itemButtonPool.EnumerateActive then
-                for button in containerFrame.itemButtonPool:EnumerateActive() do
-                    local b, s = GetButtonBagAndSlot(button)
-                    if b == bag and s == slot then
-                        return button
+    return true
+end
+
+local function FindElvUIBagButtonForBagSlot(bag, slot)
+    if not (IsAddonLoadedSafe("ElvUI") and ElvUI and ElvUI[1]) then
+        return nil
+    end
+
+    local E = ElvUI[1]
+    if not (E and E.GetModule) then
+        return nil
+    end
+
+    local Bags = E:GetModule("Bags", true)
+    if not Bags then
+        return nil
+    end
+
+    local function ScanElvFrame(frame)
+        if not (frame and frame.Bags) then
+            return nil
+        end
+
+        local bagTable = frame.Bags[bag]
+        if type(bagTable) == "table" then
+            local direct = bagTable[slot]
+            if direct then
+                return direct
+            end
+
+            for _, btn in pairs(bagTable) do
+                if type(btn) == "table" and btn.GetObjectType then
+                    local b, s = GetButtonBagAndSlot(btn)
+                    if IsBagSlotMatch(b, s, bag, slot) then
+                        return btn
                     end
                 end
             end
         end
+
+        return nil
     end
 
-    -- Fallback for alternate container implementations.
-    for name, obj in pairs(_G) do
-        if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
-            if name:find("ContainerFrame") and name:find("Item") then
-                local b, s = GetButtonBagAndSlot(obj)
-                if b == bag and s == slot then
-                    return obj
+    return ScanElvFrame(Bags.BagFrame) or ScanElvFrame(Bags.BankFrame)
+end
+
+local function FindButtonForBagSlot(bag, slot)
+    local candidates = {}
+    local seen = {}
+    local isElvUILoaded = IsAddonLoadedSafe("ElvUI")
+
+    local function AddCandidate(button, source)
+        if not button or seen[button] then
+            return
+        end
+        seen[button] = true
+
+        if not IsValidButtonCandidate(button, bag, slot) then
+            return
+        end
+
+        local shown = (button.IsShown and button:IsShown()) or (button.IsVisible and button:IsVisible())
+        if not shown then
+            return
+        end
+
+        local alpha = (button.GetEffectiveAlpha and button:GetEffectiveAlpha()) or 1
+        if alpha <= 0.05 then
+            return
+        end
+
+        local w = (button.GetWidth and button:GetWidth()) or 0
+        local h = (button.GetHeight and button:GetHeight()) or 0
+        if w < 8 or h < 8 then
+            return
+        end
+
+        local cx, cy = button:GetCenter()
+        if not cx or not cy then
+            return
+        end
+
+        local score = 0
+        local name = button.GetName and button:GetName() or ""
+        local parent = button.GetParent and button:GetParent() or nil
+        local parentName = (parent and parent.GetName and parent:GetName()) or ""
+
+        if source == "elvui-table" then score = score + 80 end
+        if source == "elvui-tree" then score = score + 55 end
+        if source == "container-util" then score = score + 35 end
+        if source == "global-enum" then score = score + 20 end
+        if source == "legacy-name" then score = score + 10 end
+
+        if name and name:find("ElvUI", 1, true) then score = score + 35 end
+        if parentName and parentName:find("ElvUI", 1, true) then score = score + 20 end
+        if button.BagID ~= nil or button.SlotID ~= nil then score = score + 20 end
+        if button.Icon or button.icon then score = score + 10 end
+
+        if isElvUILoaded and name and name:find("ContainerFrame", 1, true) then
+            score = score - 40
+        end
+
+        score = score + (alpha * 10)
+        score = score + (math.min(w, h) * 0.2)
+
+        table.insert(candidates, { button = button, score = score })
+    end
+
+    -- Deterministic ElvUI path first.
+    local elvButton = FindElvUIBagButtonForBagSlot(bag, slot)
+    if elvButton then
+        AddCandidate(elvButton, "elvui-table")
+    end
+
+    -- Retail helper for direct mapping.
+    if ContainerFrameUtil_GetItemButtonAndContainer then
+        local r1, r2 = ContainerFrameUtil_GetItemButtonAndContainer(bag, slot)
+        AddCandidate(r1, "container-util")
+        AddCandidate(r2, "container-util")
+    end
+
+    -- Modern bag frames using itemButtonPool.
+    if ContainerFrameUtil_EnumerateContainerFrames then
+        for containerFrame in ContainerFrameUtil_EnumerateContainerFrames() do
+            if containerFrame and containerFrame.itemButtonPool and containerFrame.itemButtonPool.EnumerateActive then
+                for button in containerFrame.itemButtonPool:EnumerateActive() do
+                    AddCandidate(button, "container-util")
                 end
             end
         end
     end
 
-    return nil
+    -- ElvUI frame-tree fallback.
+    if isElvUILoaded and ElvUI and ElvUI[1] then
+        local E = ElvUI[1]
+        if E and E.GetModule then
+            local Bags = E:GetModule("Bags", true)
+            if Bags and Bags.BagFrame then
+                local visited = {}
+                local function Visit(frame, depth)
+                    if not frame or visited[frame] or depth > 6 then
+                        return
+                    end
+                    visited[frame] = true
+                    AddCandidate(frame, "elvui-tree")
+                    local numChildren = frame.GetNumChildren and frame:GetNumChildren() or 0
+                    if numChildren > 0 and frame.GetChildren then
+                        local children = { frame:GetChildren() }
+                        for _, child in ipairs(children) do
+                            Visit(child, depth + 1)
+                        end
+                    end
+                end
+                Visit(Bags.BagFrame, 0)
+            end
+        end
+    end
+
+    -- Addon-agnostic frame enumeration.
+    local frame = EnumerateFrames()
+    while frame do
+        if frame.GetObjectType then
+            local objType = frame:GetObjectType()
+            if objType == "Button" or objType == "CheckButton" then
+                AddCandidate(frame, "global-enum")
+            end
+        end
+        frame = EnumerateFrames(frame)
+    end
+
+    -- Legacy name scan fallback.
+    for name, obj in pairs(_G) do
+        if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
+            if name:find("ContainerFrame") and name:find("Item") then
+                AddCandidate(obj, "legacy-name")
+            end
+        end
+    end
+
+    if #candidates == 0 then
+        return nil
+    end
+
+    table.sort(candidates, function(a, b)
+        return a.score > b.score
+    end)
+
+    return candidates[1].button
+end
+
+local function CollectButtonsFromBagFrame(frame, outButtons, seenButtons)
+    if not (frame and frame.Bags and type(frame.Bags) == "table") then
+        return 0
+    end
+
+    local count = 0
+    for _, bagObj in pairs(frame.Bags) do
+        if type(bagObj) == "table" then
+            for _, btn in pairs(bagObj) do
+                if type(btn) == "table" and btn.GetObjectType and not seenButtons[btn] then
+                    seenButtons[btn] = true
+                    table.insert(outButtons, btn)
+                    count = count + 1
+                end
+            end
+        end
+    end
+
+    return count
+end
+
+local function CollectCustomBagButtons()
+    local buttons = {}
+    local seen = {}
+    local source = "none"
+    local scanned = 0
+
+    if IsAddonLoadedSafe("ElvUI") and ElvUI and ElvUI[1] then
+        local E = ElvUI[1]
+        local Bags = E and E.GetModule and E:GetModule("Bags", true)
+        if Bags then
+            scanned = scanned + CollectButtonsFromBagFrame(Bags.BagFrame, buttons, seen)
+            scanned = scanned + CollectButtonsFromBagFrame(Bags.BankFrame, buttons, seen)
+            if scanned > 0 then
+                source = "elvui"
+            end
+        end
+    end
+
+    -- WindTools/custom wrappers may expose additional bag frame tables.
+    if scanned == 0 then
+        for name, obj in pairs(_G) do
+            if type(name) == "string" and type(obj) == "table" and name:find("Bag", 1, true) and obj.Bags then
+                scanned = scanned + CollectButtonsFromBagFrame(obj, buttons, seen)
+            end
+        end
+        if scanned > 0 then
+            source = "custom-bag-frame"
+        end
+    end
+
+    return buttons, source, scanned
 end
 
 local function UpdateBagHighlights()
@@ -1062,17 +1471,66 @@ local function UpdateBagHighlights()
         return
     end
 
+    -- Custom UI direct path: evaluate custom bag slot buttons first (ElvUI, WindTools wrappers).
+    local customButtons, customSource, customScanned = CollectCustomBagButtons()
+    local customApplied = 0
+    local fallbackApplied = 0
+    local firstFallbackTargetLogged = false
+
+    if LegacyVendorDB and LegacyVendorDB.debug then
+        DebugPrint("Custom bag scan:", customSource, "scanned=", customScanned, "buttons=", #customButtons, "ElvUILoaded=", tostring(IsAddonLoadedSafe("ElvUI")), "WindToolsLoaded=", tostring(IsAddonLoadedSafe("ElvUI_WindTools")))
+    end
+
+    if #customButtons > 0 then
+        for _, btn in ipairs(customButtons) do
+            local b, s = GetButtonBagAndSlot(btn)
+            if b ~= nil and s ~= nil and s > 0 then
+                if IsValidButtonCandidate(btn, b, s) and ShouldSellItem(b, s) then
+                    local shown = (btn.IsShown and btn:IsShown()) or (btn.IsVisible and btn:IsVisible())
+                    if shown then
+                        ApplyHighlight(btn)
+                        customApplied = customApplied + 1
+                    end
+                end
+            end
+        end
+
+        if LegacyVendorDB and LegacyVendorDB.debug then
+            DebugPrint("Custom bag path:", customSource, "scanned=", customScanned, "applied=", customApplied, "ElvUILoaded=", tostring(IsAddonLoadedSafe("ElvUI")), "WindToolsLoaded=", tostring(IsAddonLoadedSafe("ElvUI_WindTools")))
+        end
+
+        if customApplied > 0 then
+            return
+        end
+    end
+
     for bag = 0, NUM_BAG_SLOTS do
         local numSlots = C_Container.GetContainerNumSlots(bag)
         for slot = 1, numSlots do
             local shouldSell = ShouldSellItem(bag, slot)
             if shouldSell then
                 local button = FindButtonForBagSlot(bag, slot)
-                if button and button:IsShown() then
+                if LegacyVendorDB and LegacyVendorDB.debug and not firstFallbackTargetLogged then
+                    local btnName = (button and button.GetName and button:GetName()) or "<anon>"
+                    local btnType = (button and button.GetObjectType and button:GetObjectType()) or "<nil>"
+                    local mb, ms = nil, nil
+                    if button then
+                        mb, ms = GetButtonBagAndSlot(button)
+                    end
+                    local hasIcon = button and (button.Icon or button.icon) and true or false
+                    DebugPrint("First fallback target:", "slot=", bag, slot, "name=", tostring(btnName), "type=", tostring(btnType), "mapped=", tostring(mb), tostring(ms), "icon=", tostring(hasIcon))
+                    firstFallbackTargetLogged = true
+                end
+                if button and ((button.IsShown and button:IsShown()) or (button.IsVisible and button:IsVisible())) then
                     ApplyHighlight(button)
+                    fallbackApplied = fallbackApplied + 1
                 end
             end
         end
+    end
+
+    if LegacyVendorDB and LegacyVendorDB.debug then
+        DebugPrint("Fallback bag path applied=", fallbackApplied)
     end
 end
 
@@ -1094,16 +1552,16 @@ addon.ScheduleHighlightUpdate = ScheduleHighlightUpdate
 -- Format gold amount
 local function FormatMoney(copper)
     if not copper or copper == 0 then return "0c" end
-    
+
     local gold = math.floor(copper / 10000)
     local silver = math.floor((copper % 10000) / 100)
     local copperLeft = copper % 100
-    
+
     local result = ""
     if gold > 0 then result = result .. gold .. "g " end
     if silver > 0 then result = result .. silver .. "s " end
     if copperLeft > 0 or result == "" then result = result .. copperLeft .. "c" end
-    
+
     return result:trim()
 end
 
@@ -1265,6 +1723,7 @@ local function OnEvent(self, event, ...)
                 end
             end
 
+            if addon.MigrateDB then addon.MigrateDB(LegacyVendorDB) end
             EnsureExpansionProfiles(LegacyVendorDB)
             
             -- Show loaded message with version info
@@ -1278,6 +1737,7 @@ local function OnEvent(self, event, ...)
             -- Show/update the sell button on merchant frame
             addon.UpdateMerchantButton()
             addon.ScheduleHighlightUpdate()
+            StartHighlightRetries()
             
             -- Only auto-sell if enabled (disabled by default for API safety)
             if LegacyVendorDB.autoSell then
@@ -1297,6 +1757,7 @@ local function OnEvent(self, event, ...)
     elseif event == "MERCHANT_CLOSED" then
         isSelling = false
         itemsToSell = {}
+        StopHighlightRetries()
         if addon.sellButton then
             addon.sellButton:Hide()
         end
@@ -1486,11 +1947,11 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         end
 
     elseif msg == "meta" then
-        LegacyVendorDB.expansionSellAllMode = not (LegacyVendorDB.expansionSellAllMode ~= false)
-        if LegacyVendorDB.expansionSellAllMode then
-            Print("Expansion meta mode |cFF00FF00enabled|r - checked expansions sell everything from that expansion.")
+        LegacyVendorDB.sellMode = (LegacyVendorDB.sellMode == "everything") and "matching" or "everything"
+        if LegacyVendorDB.sellMode == "everything" then
+            Print("Sell mode: |cFF00FF00Everything|r - checked expansions sell everything from that expansion.")
         else
-            Print("Expansion meta mode |cFFFF0000disabled|r - detailed filters are used instead.")
+            Print("Sell mode: |cFFFFFF00Matching filters|r - detailed filters are used instead.")
         end
         if addon.UpdateMerchantButton and MerchantFrame and MerchantFrame:IsShown() then
             addon.UpdateMerchantButton()
@@ -1520,10 +1981,10 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
                 local status = LegacyVendorDB.expansions[i] and "|cFF00FF00[SELL]|r" or "|cFFFF0000[KEEP]|r"
                 local profile = LegacyVendorDB.expansionProfiles and LegacyVendorDB.expansionProfiles[i]
                 local mode = "global filters"
-                if LegacyVendorDB.expansionSellAllMode and LegacyVendorDB.expansions[i] then
+                if LegacyVendorDB.sellMode == "everything" and LegacyVendorDB.expansions[i] then
                     mode = "sell all"
                 end
-                if profile and profile.useDetailedFilters then
+                if profile and profile.useDetailedFilters and LegacyVendorDB.sellMode == "matching" then
                     mode = "detailed filters"
                 end
                 print(string.format("  %d. %s %s (%s)", i, exp.name, status, mode))

@@ -2,7 +2,7 @@
 ## Title: Legacy Vendor
 ## Notes: Automatically sells Bind on Pickup items from legacy expansions when visiting a vendor.
 ## Author: LegacyVendor
-## Version: 2.1.0
+## Version: 2.2.0
 ## SavedVariables: LegacyVendorDB
 ## IconTexture: Interface\Icons\INV_Misc_Coin_01
 ## X-Category: Inventory
@@ -11,5 +11,6 @@
 ## X-Curse-Project-ID: XXXXXX
 
 Compat.lua
+Filters.lua
 Core.lua
 Config.lua
