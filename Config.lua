@@ -11,381 +11,56 @@ local function RefreshButton()
 end
 
 -- Create options panel using the Settings API (modern WoW only)
+-- Reduced to a thin launcher: Enable toggle + button to open the custom config frame.
 local function CreateOptionsPanel()
     -- Skip if Settings API not available (Classic)
     if not Settings or not Settings.RegisterVerticalLayoutCategory then
         return
     end
-    
+
     -- Main category
     local category, layout = Settings.RegisterVerticalLayoutCategory("LegacyVendor")
-    
+
     -- Header
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("General Settings"))
-    
+
     -- Enable/Disable toggle
     do
         local variable = "LegacyVendor_Enabled"
         local name = "Enable LegacyVendor"
         local tooltip = "Enable or disable automatic selling of legacy items."
-        
-        local setting = Settings.RegisterProxySetting(category, variable, 
+
+        local setting = Settings.RegisterProxySetting(category, variable,
             Settings.VarType.Boolean, name, LegacyVendorDB.enabled,
             function() return LegacyVendorDB.enabled end,
             function(value) LegacyVendorDB.enabled = value; RefreshButton() end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Auto-sell toggle
-    do
-        local variable = "LegacyVendor_AutoSell"
-        local name = "Auto-Sell Mode"
-        local tooltip = "When enabled, items are sold automatically when opening a vendor. When disabled (default), you must click the [Sell Legacy] button at vendors. Manual mode is recommended for compatibility with Blizzard's API restrictions."
-        
-        local setting = Settings.RegisterProxySetting(category, variable, 
-            Settings.VarType.Boolean, name, LegacyVendorDB.autoSell,
-            function() return LegacyVendorDB.autoSell end,
-            function(value) LegacyVendorDB.autoSell = value end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-
-    -- Strict seasonal protection toggle
-    do
-        local variable = "LegacyVendor_StrictSeasonalProtection"
-        local name = "Strict Seasonal M+ Protection"
-        local tooltip = "Hard-protect current-season scaled legacy dungeon items. When enabled (recommended), this protection is checked first and overrides all sell filters for those items."
-
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.strictSeasonalProtection,
-            function() return LegacyVendorDB.strictSeasonalProtection ~= false end,
-            function(value) LegacyVendorDB.strictSeasonalProtection = value; RefreshButton() end)
 
         Settings.CreateCheckbox(category, setting, tooltip)
     end
 
-    -- Expansion meta mode toggle
-    do
-        local variable = "LegacyVendor_ExpansionMetaMode"
-        local name = "Expansion Meta Mode (Sell All In Checked Expansions)"
-        local tooltip = "When enabled, checking an expansion means sell all items in that expansion bucket. Current-season M+ dungeon gear is treated as current expansion in this mode."
+    -- Launch button: opens the full custom config frame
+    if Settings.CreateButton then
+        -- Preferred: native Settings button element (available in recent Retail builds)
+        local buttonInitializer = Settings.CreateButton(
+            "Open Legacy Vendor Filters…",
+            "Open the full LegacyVendor filter configuration.",
+            function() addon.OpenConfig() end)
+        layout:AddInitializer(buttonInitializer)
+    else
+        -- Fallback: proxy boolean setting whose setter fires OpenConfig then resets itself
+        local variable = "LegacyVendor_OpenConfigLauncher"
+        local name = "Open Legacy Vendor Filters…"
+        local tooltip = "Click to open the full LegacyVendor filter configuration frame."
+        local setting = Settings.RegisterProxySetting(category, variable,
+            Settings.VarType.Boolean, name, false,
+            function() return false end,
+            function(_value) addon.OpenConfig() end)
+        Settings.CreateCheckbox(category, setting, tooltip)
+    end
 
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.expansionSellAllMode,
-            function() return LegacyVendorDB.expansionSellAllMode ~= false end,
-            function(value) LegacyVendorDB.expansionSellAllMode = value; RefreshButton() end)
-
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Show summary toggle
-    do
-        local variable = "LegacyVendor_ShowSummary"
-        local name = "Show Sale Summary"
-        local tooltip = "Display a summary message after selling items."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.showSummary,
-            function() return LegacyVendorDB.showSummary end,
-            function(value) LegacyVendorDB.showSummary = value end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Confirm before selling toggle
-    do
-        local variable = "LegacyVendor_ConfirmSell"
-        local name = "Confirm Before Selling"
-        local tooltip = "Show a confirmation dialog before selling items."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.confirmSell,
-            function() return LegacyVendorDB.confirmSell end,
-            function(value) LegacyVendorDB.confirmSell = value end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Sell gray items toggle
-    do
-        local variable = "LegacyVendor_SellGray"
-        local name = "Also Sell Gray Items"
-        local tooltip = "Automatically sell all gray (poor quality) items regardless of expansion."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.sellGray,
-            function() return LegacyVendorDB.sellGray end,
-            function(value) LegacyVendorDB.sellGray = value end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Highlight items in bags toggle
-    do
-        local variable = "LegacyVendor_HighlightItems"
-        local name = "Highlight Sellable Items in Bags"
-        local tooltip = "Show a red glow on items in your bags that will be sold. Makes it easy to see what Legacy Vendor will sell."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.highlightItems,
-            function() return LegacyVendorDB.highlightItems end,
-            function(value) 
-                LegacyVendorDB.highlightItems = value
-                if addon.ScheduleHighlightUpdate then
-                    addon.ScheduleHighlightUpdate()
-                end
-            end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Only sell items lower ilvl than equipped toggle
-    do
-        local variable = "LegacyVendor_OnlySellLowerIlvl"
-        local name = "Only Sell Lower Item Level"
-        local tooltip = "When enabled, equippable items will only be sold if their item level is lower than what you currently have equipped in the same slot. Items without a slot are not affected."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.onlySellLowerIlvl,
-            function() return LegacyVendorDB.onlySellLowerIlvl end,
-            function(value) LegacyVendorDB.onlySellLowerIlvl = value; RefreshButton() end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- ==========================================
-    -- BIND TYPE FILTERS
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Bind Type Filters"))
-    
-    -- Sell BoP items toggle
-    do
-        local variable = "LegacyVendor_SellBoP"
-        local name = "Sell Bind on Pickup (Soulbound)"
-        local tooltip = "Sell items that are Bind on Pickup and soulbound to you."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.sellBoP,
-            function() return LegacyVendorDB.sellBoP end,
-            function(value) LegacyVendorDB.sellBoP = value; RefreshButton() end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Sell BoE items toggle
-    do
-        local variable = "LegacyVendor_SellBoE"
-        local name = "Sell Bind on Equip (Bound)"
-        local tooltip = "Sell items that were Bind on Equip but are now bound to you. Be careful with valuable transmog!"
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.sellBoE,
-            function() return LegacyVendorDB.sellBoE end,
-            function(value) LegacyVendorDB.sellBoE = value; RefreshButton() end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Sell Unbound items toggle
-    do
-        local variable = "LegacyVendor_SellUnbound"
-        local name = "Sell Not Bound (Food, Reagents)"
-        local tooltip = "Sell items that are not bound at all, like old food, potions, and crafting materials. Use with caution!"
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.sellUnbound,
-            function() return LegacyVendorDB.sellUnbound end,
-            function(value) LegacyVendorDB.sellUnbound = value; RefreshButton() end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Max items per visit slider
-    do
-        local variable = "LegacyVendor_MaxSell"
-        local name = "Max Items Per Visit"
-        local tooltip = "Maximum number of items to sell per vendor visit."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Number, name, LegacyVendorDB.maxSellPerVisit,
-            function() return LegacyVendorDB.maxSellPerVisit end,
-            function(value) LegacyVendorDB.maxSellPerVisit = value end)
-        
-        local options = Settings.CreateSliderOptions(1, 100, 1)
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
-        Settings.CreateSlider(category, setting, options, tooltip)
-    end
-    
-    -- ==========================================
-    -- ITEM SOURCE FILTERS
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Item Source Filters"))
-    
-    -- Filter by source toggle (master toggle)
-    do
-        local variable = "LegacyVendor_FilterBySource"
-        local name = "Enable Source Filtering"
-        local tooltip = "When enabled, only sell items from checked sources (dungeons, raids, etc.). When disabled, source is ignored."
-        
-        local setting = Settings.RegisterProxySetting(category, variable,
-            Settings.VarType.Boolean, name, LegacyVendorDB.filterBySource,
-            function() return LegacyVendorDB.filterBySource end,
-            function(value) LegacyVendorDB.filterBySource = value; RefreshButton() end)
-        
-        Settings.CreateCheckbox(category, setting, tooltip)
-    end
-    
-    -- Create toggles for each source type
-    local sourceOrder = { "consumable", "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown" }
-    for _, sourceKey in ipairs(sourceOrder) do
-        local source = addon.ITEM_SOURCES[sourceKey]
-        if source then
-            local variable = "LegacyVendor_Source_" .. sourceKey
-            local name = source.name
-            local tooltip = "Include items from " .. source.name .. " when source filtering is enabled."
-            
-            local setting = Settings.RegisterProxySetting(category, variable,
-                Settings.VarType.Boolean, name, LegacyVendorDB.itemSources[sourceKey],
-                function() return LegacyVendorDB.itemSources[sourceKey] end,
-                function(value) LegacyVendorDB.itemSources[sourceKey] = value; RefreshButton() end)
-            
-            Settings.CreateCheckbox(category, setting, tooltip)
-        end
-    end
-    
-    -- ==========================================
-    -- EXPANSION FILTERS
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Expansion Filters"))
-    
-    -- Get max expansion for this version
-    local maxExpansion = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION
-    
-    -- Create toggles for each expansion (only show expansions that exist in this WoW version)
-    for i = 0, maxExpansion do
-        local exp = addon.EXPANSIONS[i]
-        if exp then
-            local variable = "LegacyVendor_Exp" .. i
-            local name = exp.name .. " (" .. exp.short .. ")"
-            local tooltip = "Enable selling of Bind on Pickup items from " .. exp.name .. "."
-            
-            local setting = Settings.RegisterProxySetting(category, variable,
-                Settings.VarType.Boolean, name, LegacyVendorDB.expansions[i],
-                function() return LegacyVendorDB.expansions[i] end,
-                function(value)
-                    LegacyVendorDB.expansions[i] = value
-                    RefreshButton()
-                end)
-            
-            Settings.CreateCheckbox(category, setting, tooltip)
-        end
-    end
-    
-    -- ==========================================
-    -- RARITY FILTERS
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Rarity Filters"))
-    
-    local rarityOrder = {0, 1, 2, 3, 4, 5, 6, 7}
-    for _, rarityID in ipairs(rarityOrder) do
-        local rarity = addon.RARITIES[rarityID]
-        if rarity then
-            local variable = "LegacyVendor_Rarity" .. rarityID
-            local name = rarity.name
-            local tooltip = "Enable selling of " .. rarity.name .. " quality items."
-            
-            local setting = Settings.RegisterProxySetting(category, variable,
-                Settings.VarType.Boolean, name, LegacyVendorDB.rarities[rarityID],
-                function() return LegacyVendorDB.rarities[rarityID] end,
-                function(value) LegacyVendorDB.rarities[rarityID] = value; RefreshButton() end)
-            
-            Settings.CreateCheckbox(category, setting, tooltip)
-        end
-    end
-    
-    -- ==========================================
-    -- EQUIPMENT SLOT FILTERS
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Equipment Slot Filters"))
-    
-    local slotOrder = {
-        "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER", "INVTYPE_CLOAK",
-        "INVTYPE_CHEST", "INVTYPE_ROBE", "INVTYPE_WRIST", "INVTYPE_HAND",
-        "INVTYPE_WAIST", "INVTYPE_LEGS", "INVTYPE_FEET",
-        "INVTYPE_FINGER", "INVTYPE_TRINKET",
-        "INVTYPE_WEAPON", "INVTYPE_2HWEAPON", "INVTYPE_WEAPONMAINHAND", 
-        "INVTYPE_WEAPONOFFHAND", "INVTYPE_HOLDABLE", "INVTYPE_SHIELD",
-        "INVTYPE_RANGED", "INVTYPE_RANGEDRIGHT",
-        "INVTYPE_BODY", "INVTYPE_TABARD"
-    }
-    
-    for _, slotKey in ipairs(slotOrder) do
-        local slot = addon.EQUIP_SLOTS[slotKey]
-        if slot then
-            local variable = "LegacyVendor_Slot_" .. slotKey
-            local name = slot.name
-            local tooltip = "Enable selling of items equipped in " .. slot.name .. " slot."
-            
-            local setting = Settings.RegisterProxySetting(category, variable,
-                Settings.VarType.Boolean, name, LegacyVendorDB.equipSlots[slotKey],
-                function() return LegacyVendorDB.equipSlots[slotKey] end,
-                function(value) LegacyVendorDB.equipSlots[slotKey] = value; RefreshButton() end)
-            
-            Settings.CreateCheckbox(category, setting, tooltip)
-        end
-    end
-    
-    -- ==========================================
-    -- ITEM TYPE FILTERS (Non-Equippable)
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Non-Equippable Item Types"))
-
-    local typeHint = layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Note: Consumables are configured in Item Source Filters."))
-    local generalTypeOrder = {1, 12, 13, 15}
-    for _, typeID in ipairs(generalTypeOrder) do
-        local itemType = addon.ITEM_TYPES[typeID]
-        if itemType then
-            local variable = "LegacyVendor_Type" .. typeID
-            local name = itemType.name
-            local tooltip = "Enable selling of " .. itemType.name .. "."
-            
-            local setting = Settings.RegisterProxySetting(category, variable,
-                Settings.VarType.Boolean, name, LegacyVendorDB.itemTypes[typeID],
-                function() return LegacyVendorDB.itemTypes[typeID] end,
-                function(value) LegacyVendorDB.itemTypes[typeID] = value; RefreshButton() end)
-            
-            Settings.CreateCheckbox(category, setting, tooltip)
-        end
-    end
-    
-    -- ==========================================
-    -- CRAFTING & PROFESSION ITEM FILTERS
-    -- ==========================================
-    layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Crafting & Profession Items"))
-    
-    -- Gems, Reagents, Trade Goods (Vellums), and Recipes are off by default.
-    -- Only enable if you intentionally want to sell legacy crafting materials.
-    local craftingTypeOrder = {3, 5, 7, 9}
-    for _, typeID in ipairs(craftingTypeOrder) do
-        local itemType = addon.ITEM_TYPES[typeID]
-        if itemType then
-            local variable = "LegacyVendor_Type" .. typeID
-            local name = itemType.name
-            local tooltip = "Enable selling of " .. itemType.name .. ". Off by default — enable only to sell legacy crafting materials."
-            
-            local setting = Settings.RegisterProxySetting(category, variable,
-                Settings.VarType.Boolean, name, LegacyVendorDB.itemTypes[typeID],
-                function() return LegacyVendorDB.itemTypes[typeID] end,
-                function(value) LegacyVendorDB.itemTypes[typeID] = value; RefreshButton() end)
-            
-            Settings.CreateCheckbox(category, setting, tooltip)
-        end
-    end
-    
     -- Register the category
     Settings.RegisterAddOnCategory(category)
-    
+
     addon.settingsCategory = category
 end
 
