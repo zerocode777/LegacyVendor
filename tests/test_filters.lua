@@ -44,3 +44,29 @@ T.test("migrate is idempotent", function()
   addon.MigrateDB(db)               -- must not re-derive
   T.eq(db.sellMode, "matching")
 end)
+
+T.test("nil sellMode maps to everything", function()
+  local db = { itemSources = {}, expansionProfiles = {} }
+  -- expansionSellAllMode is intentionally absent (nil)
+  addon.MigrateDB(db)
+  T.eq(db.sellMode, "everything")
+end)
+
+T.test("idempotent second pass leaves sources and version intact", function()
+  local db = {
+    filterBySource = true,
+    itemSources = { dungeon = true, raid = false },
+    expansionProfiles = {},
+    __sourceKeys = { "dungeon", "raid" },
+  }
+  addon.MigrateDB(db)
+  -- After first pass: dungeon is kept (nil in skip-set), raid is skipped (true)
+  local src_dungeon = db.itemSources.dungeon
+  local src_raid    = db.itemSources.raid
+  local ver         = db.settingsSchemaVersion
+  -- Second pass must not re-process an already-converted skip-list
+  addon.MigrateDB(db)
+  T.eq(db.settingsSchemaVersion, ver)
+  T.eq(db.itemSources.dungeon, src_dungeon)
+  T.eq(db.itemSources.raid, src_raid)
+end)

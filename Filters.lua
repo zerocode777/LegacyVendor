@@ -13,8 +13,13 @@ local function migrateSourceScope(skipInto, oldInclude, gate, keys)
     for k in pairs(skipInto) do skipInto[k] = nil end
     return
   end
+  -- Gate-ON rule: skip every source not explicitly true in the old include-list.
+  -- Snapshot decouples read from write so aliasing (skipInto == oldInclude) is safe.
+  local snapshot = {}
+  for _, k in ipairs(keys) do snapshot[k] = oldInclude[k] end
+  for k in pairs(skipInto) do skipInto[k] = nil end
   for _, k in ipairs(keys) do
-    skipInto[k] = (oldInclude[k] ~= true) and true or nil
+    skipInto[k] = (snapshot[k] ~= true) and true or nil
   end
 end
 
