@@ -682,6 +682,8 @@ local function ShouldSellItem(bag, slot)
         return false
     end
 
+    -- Resolve against filterExpansionID (which GetFilterExpansionID may have redirected,
+    -- e.g. a current-season item remapped to CURRENT_EXPANSION), not the raw expansionID.
     local resolved = addon.ResolveActiveFilters(db, filterExpansionID)
     local activeRarities = resolved.rarities
     local activeBindTypes = resolved.bindTypes
@@ -700,11 +702,9 @@ local function ShouldSellItem(bag, slot)
         return true
     end
 
-    -- Meta expansion mode: sell everything from enabled expansions.
+    -- "Everything" mode: sell all legacy items from enabled expansions.
+    -- Detailed filters (including source) intentionally do NOT apply here.
     if db.sellMode == "everything" then
-        if not PassesSourceFilter() then
-            return false
-        end
         DebugPrint("Meta expansion sell-all matched:", filterExpansionID, itemLink)
         return true, itemLink, itemCount, sellPrice * itemCount
     end
@@ -807,7 +807,9 @@ local function ShouldSellItem(bag, slot)
         end
     end
     
-    -- === FILTER 7: ITEM SOURCE (dungeon, raid, profession, vendor, etc.) ===
+    -- === FILTER 7: ITEM SOURCE (skip-list) ===
+    -- In "matching" mode, items whose source is in the skip-set (via addon.SourceSkipped)
+    -- are never sold; leaving the skip-set empty allows every source.
     if not PassesSourceFilter() then
         return false
     end
