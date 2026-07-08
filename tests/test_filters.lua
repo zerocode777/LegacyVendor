@@ -110,3 +110,32 @@ T.test("resolve uses override when enabled in matching mode", function()
   T.eq(r.itemSources.raid, true)
   T.eq(r.onlyLowerIlvl, true)
 end)
+
+T.test("everything mode ignores useDetailedFilters profile", function()
+  local db = {
+    sellMode = "everything",
+    rarities = { [3] = true }, equipSlots = {}, itemTypes = {},
+    sellBoP = true, itemSources = { consumable = true }, onlySellLowerIlvl = false,
+    expansionProfiles = { [8] = {
+      useDetailedFilters = true,
+      rarities = { [4] = true }, itemSources = { raid = true },
+    } },
+  }
+  local r = addon.ResolveActiveFilters(db, 8)
+  T.eq(r.usedOverride, false)        -- override must NOT apply in everything mode
+  T.eq(r.rarities[3], true)          -- global values, not the profile's
+  T.eq(r.rarities[4], nil)
+  T.eq(r.itemSources.consumable, true)
+end)
+
+T.test("resolve handles nil expansionID without crashing", function()
+  local db = {
+    sellMode = "matching",
+    rarities = { [2] = true }, equipSlots = {}, itemTypes = {},
+    sellBoP = true, itemSources = {}, onlySellLowerIlvl = false,
+    expansionProfiles = {},
+  }
+  local r = addon.ResolveActiveFilters(db, nil)
+  T.eq(r.usedOverride, false)
+  T.eq(r.rarities[2], true)
+end)
