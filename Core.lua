@@ -222,6 +222,7 @@ local defaults = {
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
+    sellMode = "everything", -- "everything" | "matching" — single source of truth for sell mode
     expansionProfiles = {}, -- Per-expansion nested filter profiles
 }
 
@@ -581,7 +582,7 @@ local function GetFilterExpansionID(itemID, itemLink, expansionID, baseItemLevel
         return nil
     end
 
-    if LegacyVendorDB and LegacyVendorDB.expansionSellAllMode then
+    if LegacyVendorDB and LegacyVendorDB.sellMode == "everything" then
         if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItemLevel, classID, equipLoc, bag, slot) then
             return addon.CURRENT_EXPANSION
         end
@@ -656,7 +657,7 @@ local function ShouldSellItem(bag, slot)
         if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, itemInfo[4], classID, equipLoc, bag, slot) then
             -- Explicit opt-in: if current expansion is checked in meta sell-all mode,
             -- allow current-season dungeon items to flow through as current expansion.
-            if not (db.expansionSellAllMode and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
+            if not (db.sellMode == "everything" and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
                 DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
                 return false
             end
@@ -1944,11 +1945,11 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         end
 
     elseif msg == "meta" then
-        LegacyVendorDB.expansionSellAllMode = not (LegacyVendorDB.expansionSellAllMode ~= false)
-        if LegacyVendorDB.expansionSellAllMode then
-            Print("Expansion meta mode |cFF00FF00enabled|r - checked expansions sell everything from that expansion.")
+        LegacyVendorDB.sellMode = (LegacyVendorDB.sellMode == "everything") and "matching" or "everything"
+        if LegacyVendorDB.sellMode == "everything" then
+            Print("Sell mode: |cFF00FF00Everything|r - checked expansions sell everything from that expansion.")
         else
-            Print("Expansion meta mode |cFFFF0000disabled|r - detailed filters are used instead.")
+            Print("Sell mode: |cFFFFFF00Matching filters|r - detailed filters are used instead.")
         end
         if addon.UpdateMerchantButton and MerchantFrame and MerchantFrame:IsShown() then
             addon.UpdateMerchantButton()
@@ -1978,10 +1979,10 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
                 local status = LegacyVendorDB.expansions[i] and "|cFF00FF00[SELL]|r" or "|cFFFF0000[KEEP]|r"
                 local profile = LegacyVendorDB.expansionProfiles and LegacyVendorDB.expansionProfiles[i]
                 local mode = "global filters"
-                if LegacyVendorDB.expansionSellAllMode and LegacyVendorDB.expansions[i] then
+                if LegacyVendorDB.sellMode == "everything" and LegacyVendorDB.expansions[i] then
                     mode = "sell all"
                 end
-                if profile and profile.useDetailedFilters then
+                if profile and profile.useDetailedFilters and LegacyVendorDB.sellMode == "matching" then
                     mode = "detailed filters"
                 end
                 print(string.format("  %d. %s %s (%s)", i, exp.name, status, mode))
