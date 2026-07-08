@@ -137,9 +137,9 @@ function addon.BuildActiveSummary(db)
   local skipNote = (#skipped > 0) and (" (skipping " .. joinList(skipped) .. ")") or ""
 
   local chips = {
-    "Rarity ▸ " .. rarText,
-    "Source ▸ " .. ((#skipped > 0) and ("skip " .. joinList(skipped)) or "all"),
-    "Expansions ▸ " .. expText,
+    "Rarity: " .. rarText,
+    "Source: " .. ((#skipped > 0) and ("skip " .. joinList(skipped)) or "all"),
+    "Expansions: " .. expText,
   }
   return { mode = mode, chips = chips, headline = "Selling " .. rarText .. " gear from " .. expText .. skipNote .. "." }
 end

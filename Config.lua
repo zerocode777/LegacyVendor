@@ -229,7 +229,7 @@ local function CreateSimpleConfig()
     -- Step 6: summary consumes addon.BuildActiveSummary
     local function RefreshSummary()
         local s = addon.BuildActiveSummary(LegacyVendorDB)
-        topSummaryText:SetText("|cFF44FF44\226\156\148 " .. s.headline .. "|r")
+        topSummaryText:SetText("|cFF44FF44" .. s.headline .. "|r")
         local detail = (#s.chips > 0) and table.concat(s.chips, "   ") or ""
         bottomSummaryText:SetText(detail)
         bottomSummaryText:SetTextColor(
@@ -610,8 +610,8 @@ local function CreateSimpleConfig()
     -- ==================================================
     local advOpen = LegacyVendorDB.showAdvanced == true
     local advHeaderText = advOpen
-        and "|cFFFFD100\226\150\188 Advanced: per-expansion overrides|r"
-        or  "|cFF888888\226\150\182 Advanced: per-expansion overrides (click to expand)|r"
+        and "|cFFFFD100[-] Advanced: per-expansion overrides|r"
+        or  "|cFF888888[+] Advanced: per-expansion overrides (click to expand)|r"
     AddHeader(advHeaderText,
         "Optional. Override the global filters for one specific expansion.")
 
