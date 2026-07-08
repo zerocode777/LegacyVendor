@@ -535,64 +535,33 @@ local function CreateSimpleConfig()
         end
     end
 
-    local function BuildActiveSummary()
-        if not LegacyVendorDB then return "|cFF44FF44—|r" end
-        local parts = {}
-        local metaOn = LegacyVendorDB.expansionSellAllMode ~= false
+    -- Frames to grey when not in "matching" mode
+    local detailFrames = {}
 
-        -- Expansions: label changes based on meta mode
-        local expNames = {}
-        local maxExp = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION or 0
-        for i = 0, maxExp do
-            if LegacyVendorDB.expansions and LegacyVendorDB.expansions[i] then
-                local exp = addon.EXPANSIONS and addon.EXPANSIONS[i]
-                if exp then table.insert(expNames, exp.short or exp.name) end
+    local function RefreshDetailGrey()
+        local isMatching = LegacyVendorDB.sellMode == "matching"
+        local r, g, b = isMatching and 1 or 0.45, isMatching and 1 or 0.45, isMatching and 1 or 0.45
+        for _, f in ipairs(detailFrames) do
+            if f.SetAlpha then
+                f:SetAlpha(isMatching and 1.0 or 0.4)
+            end
+            if f.Text and f.Text.SetTextColor then
+                f.Text:SetTextColor(r, g, b)
             end
         end
-        if #expNames > 0 then
-            if metaOn then
-                -- Meta ON: checked expansion = sell all from it
-                table.insert(parts, "|cFF44FF44Sell-all:|r " .. table.concat(expNames, " "))
-            else
-                -- Meta OFF: checked expansion only enables the bucket; detailed filters still gate each item
-                table.insert(parts, "|cFFFFAA00Detailed:|r " .. table.concat(expNames, " "))
-            end
-        else
-            table.insert(parts, "|cFFFF4444No expansions active|r")
-        end
-
-        -- Rarities (from currently-viewed profile, informational only)
-        local rarNames = {}
-        local expID = LegacyVendorDB.selectedExpansionProfileID or 0
-        local profile = LegacyVendorDB.expansionProfiles and LegacyVendorDB.expansionProfiles[expID]
-        if profile and profile.rarities then
-            for rarID = 0, 7 do
-                if profile.rarities[rarID] then
-                    local rar = addon.RARITIES and addon.RARITIES[rarID]
-                    if rar then table.insert(rarNames, rar.name:sub(1, 3)) end
-                end
-            end
-        end
-        if #rarNames > 0 then
-            table.insert(parts, "Rar: " .. table.concat(rarNames, "/"))
-        end
-
-        -- Global flags
-        local flags = {}
-        if LegacyVendorDB.sellGray then table.insert(flags, "+Grays") end
-        if LegacyVendorDB.autoSell then table.insert(flags, "Auto") end
-        if LegacyVendorDB.strictSeasonalProtection ~= false then table.insert(flags, "M+Prot") end
-        if #flags > 0 then
-            table.insert(parts, table.concat(flags, " · "))
-        end
-
-        return "|cFF44FF44" .. table.concat(parts, "  ·  ") .. "|r"
     end
 
+    -- Step 6: summary consumes addon.BuildActiveSummary
     local function RefreshSummary()
-        local s = BuildActiveSummary()
-        topSummaryText:SetText(s)
-        bottomSummaryText:SetText(s)
+        local s = addon.BuildActiveSummary(LegacyVendorDB)
+        topSummaryText:SetText("|cFF44FF44\xE2\x9C\x94 " .. s.headline .. "|r")
+        local detail = (#s.chips > 0) and table.concat(s.chips, "   ") or ""
+        bottomSummaryText:SetText(detail)
+        bottomSummaryText:SetTextColor(
+            s.mode == "matching" and 0.8 or 0.4,
+            s.mode == "matching" and 0.9 or 0.4,
+            0.5)
+        RefreshDetailGrey()
     end
 
     -- Wire up search box scripts
@@ -640,7 +609,7 @@ local function CreateSimpleConfig()
         end
     end
 
-    local FILTER_ORDER_HELP = "Expansion -> Meta/Detailed mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks"
+    local FILTER_ORDER_HELP = "Expansion -> Mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks"
     local currentTooltipScope = "global"
 
     local function SetTooltipScope(scope)
@@ -649,15 +618,11 @@ local function CreateSimpleConfig()
 
     local function AttachCheckboxTooltip(cb, label, tooltip)
         cb:SetScript("OnEnter", function(self)
-            if not GameTooltip then
-                return
-            end
-
+            if not GameTooltip then return end
             local scopeTag = "|cFF66CCFF[Global]|r"
             if currentTooltipScope == "profile" then
                 scopeTag = "|cFF77FF77[Per-Expansion]|r"
             end
-
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:ClearLines()
             GameTooltip:SetText((label or "Option") .. " " .. scopeTag, 1.0, 0.82, 0.0)
@@ -665,15 +630,10 @@ local function CreateSimpleConfig()
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Filter order:", 0.55, 0.8, 1.0)
             GameTooltip:AddLine(FILTER_ORDER_HELP, 0.82, 0.82, 0.82, true)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Note: Some options are global, others apply only to the selected expansion profile.", 0.75, 0.75, 0.75, true)
             GameTooltip:Show()
         end)
-
         cb:SetScript("OnLeave", function()
-            if GameTooltip then
-                GameTooltip:Hide()
-            end
+            if GameTooltip then GameTooltip:Hide() end
         end)
     end
 
@@ -741,7 +701,7 @@ local function CreateSimpleConfig()
     -- GENERAL SETTINGS
     -- ==================================================
     AddHeader("|cFFFFD100General Settings|r",
-        "Priority: Expansion -> (Meta/Detailed) -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks.")
+        "Priority: Expansion -> Mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks.")
     SetTooltipScope("global")
 
     CreateCheckbox(content, "Enable LegacyVendor", "Enable or disable automatic selling.",
@@ -753,10 +713,23 @@ local function CreateSimpleConfig()
         function() return LegacyVendorDB.autoSell end,
         function(v) LegacyVendorDB.autoSell = v end)
 
-    CreateCheckbox(content, "Expansion Meta Mode  |cFF888888(sell all in checked expansions)|r",
-        "Checked expansions sell everything in that expansion bucket.",
-        function() return LegacyVendorDB.expansionSellAllMode ~= false end,
-        function(v) LegacyVendorDB.expansionSellAllMode = v end, true)
+    -- Step 1: Radio-style sell mode checkboxes (mutually exclusive)
+    local function SetMode(m)
+        LegacyVendorDB.sellMode = m
+        RefreshButton()
+        RefreshSummary()
+        RefreshConfigFrame()
+    end
+
+    CreateCheckbox(content, "Sell EVERYTHING from enabled expansions",
+        "Ignore detailed filters; sell all legacy items from the expansions you tick below.",
+        function() return LegacyVendorDB.sellMode == "everything" end,
+        function() SetMode("everything") end)
+
+    CreateCheckbox(content, "Only sell items MATCHING my filters",
+        "Use the rarity / source / slot / type / bind filters below.",
+        function() return LegacyVendorDB.sellMode == "matching" end,
+        function() SetMode("matching") end)
 
     CreateCheckbox(content, "Strict Seasonal M+ Protection  |cFF44FF44(recommended)|r",
         "Hard-protect current-season scaled legacy dungeon items. Overrides all sell filters.",
@@ -789,88 +762,16 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- EXPANSION PROFILE EDITOR
-    -- ==================================================
-    AddHeader("|cFFFFD100Expansion Profile Editor|r",
-        "Meta mode = sell all in checked expansion (but still respects Source if enabled). Detailed mode uses all nested filters.")
-    SetTooltipScope("profile")
-
-    -- Styled selector bar
-    local selectedExpID = GetSelectedExpansionID()
-    local selectedExp = addon.EXPANSIONS[selectedExpID]
-    local selectedLabel = selectedExp and selectedExp.name or ("Expansion " .. selectedExpID)
-
-    local selectorBg = CreateFrame("Frame", nil, content)
-    selectorBg:SetPoint("TOPLEFT", 8, yOffset)
-    selectorBg:SetPoint("TOPRIGHT", -8, yOffset)
-    selectorBg:SetHeight(30)
-    local selectorBg_bg = selectorBg:CreateTexture(nil, "BACKGROUND")
-    selectorBg_bg:SetAllPoints(selectorBg)
-    selectorBg_bg:SetColorTexture(0.05, 0.05, 0.2, 0.9)
-
-    local prevBtn = CreateFrame("Button", nil, selectorBg, "UIPanelButtonTemplate")
-    prevBtn:SetPoint("LEFT", selectorBg, "LEFT", 4, 0)
-    prevBtn:SetSize(55, 22)
-    prevBtn:SetText("< Prev")
-    prevBtn:SetScript("OnClick", function()
-        local id = GetSelectedExpansionID() - 1
-        if id < 0 then id = maxExpansion end
-        LegacyVendorDB.selectedExpansionProfileID = id
-        RefreshConfigFrame()
-    end)
-
-    local nextBtn = CreateFrame("Button", nil, selectorBg, "UIPanelButtonTemplate")
-    nextBtn:SetPoint("RIGHT", selectorBg, "RIGHT", -4, 0)
-    nextBtn:SetSize(55, 22)
-    nextBtn:SetText("Next >")
-    nextBtn:SetScript("OnClick", function()
-        local id = GetSelectedExpansionID() + 1
-        if id > maxExpansion then id = 0 end
-        LegacyVendorDB.selectedExpansionProfileID = id
-        RefreshConfigFrame()
-    end)
-
-    local expNameLabel = selectorBg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    expNameLabel:SetPoint("CENTER", selectorBg, "CENTER", 0, 0)
-    expNameLabel:SetText("|cFF00CCFFEditing: |r|cFFFFFFFF" .. selectedLabel .. "|r")
-
-    yOffset = yOffset - 38
-
-    CreateCheckbox(content, "Use Detailed Filters For This Expansion",
-        "OFF: meta mode sells all from this expansion. ON: apply per-expansion nested filters below.",
-        function() return GetSelectedProfile().useDetailedFilters end,
-        function(v) GetSelectedProfile().useDetailedFilters = v end, true)
-
-    CreateCheckbox(content, "Only Sell Lower Item Level  |cFF888888(this profile)|r",
-        "Sell equippable items only if their ilvl is lower than your equipped item in that slot.",
-        function() return GetSelectedProfile().onlySellLowerIlvl end,
-        function(v) GetSelectedProfile().onlySellLowerIlvl = v end, true)
-
-    AddSep()
-
-    -- ==================================================
-    -- EXPANSION FILTERS (with inline status badges)
+    -- EXPANSION FILTERS (plain checklist — no badges)
     -- ==================================================
     AddHeader("|cFFFFD100Expansion Filters|r  |cFF888888(check = SELL)|r",
-        "Meta ON: checked expansion sells all. Meta OFF: must also pass detailed filters.")
+        "Tick which expansions to sell from. Use 'matching' mode to apply detailed filters.")
     SetTooltipScope("global")
 
     for i = 0, maxExpansion do
         local exp = addon.EXPANSIONS[i]
         if exp then
-            local profile = LegacyVendorDB.expansionProfiles and LegacyVendorDB.expansionProfiles[i]
-            local enabled = LegacyVendorDB.expansions[i]
-            local badge = ""
-            if enabled then
-                if profile and profile.useDetailedFilters then
-                    badge = " |cFF00CCFF[detail]|r"
-                elseif LegacyVendorDB.expansionSellAllMode then
-                    badge = " |cFF44FF44[all]|r"
-                else
-                    badge = " |cFFFFFF44[global]|r"
-                end
-            end
-            CreateCheckbox2Col(content, (exp.short or exp.name) .. badge,
+            CreateCheckbox2Col(content, (exp.short or exp.name),
                 "Enable selling items from " .. exp.name,
                 function() return LegacyVendorDB.expansions[i] end,
                 function(v) LegacyVendorDB.expansions[i] = v end)
@@ -881,45 +782,45 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- BIND TYPE FILTERS
+    -- BIND TYPE FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Bind Type Filters|r  |cFF888888(this expansion profile)|r")
-    SetTooltipScope("profile")
+    AddHeader("|cFFFFD100Bind Type Filters|r  |cFF888888(global)|r")
+    SetTooltipScope("global")
 
-    CreateCheckbox(content, "Sell Soulbound (BoP)", "Sell Bind on Pickup items.",
-        function() return GetSelectedProfile().bindTypes.bop end,
-        function(v) GetSelectedProfile().bindTypes.bop = v end, true)
+    local bindBoP = CreateCheckbox(content, "Sell Soulbound (BoP)", "Sell Bind on Pickup items.",
+        function() return LegacyVendorDB.sellBoP end,
+        function(v) LegacyVendorDB.sellBoP = v end, true)
+    table.insert(detailFrames, bindBoP)
 
-    CreateCheckbox(content, "Sell Bound BoE", "Sell Bind on Equip items that are already bound.",
-        function() return GetSelectedProfile().bindTypes.boe end,
-        function(v) GetSelectedProfile().bindTypes.boe = v end, true)
+    local bindBoE = CreateCheckbox(content, "Sell Bound BoE", "Sell Bind on Equip items that are already bound.",
+        function() return LegacyVendorDB.sellBoE end,
+        function(v) LegacyVendorDB.sellBoE = v end, true)
+    table.insert(detailFrames, bindBoE)
 
-    CreateCheckbox(content, "Sell Not Bound  |cFFFF5555(careful!)|r",
+    local bindUnbound = CreateCheckbox(content, "Sell Not Bound  |cFFFF5555(careful!)|r",
         "Sell unbound items — old food, reagents, etc.",
-        function() return GetSelectedProfile().bindTypes.unbound end,
-        function(v) GetSelectedProfile().bindTypes.unbound = v end, true)
+        function() return LegacyVendorDB.sellUnbound end,
+        function(v) LegacyVendorDB.sellUnbound = v end, true)
+    table.insert(detailFrames, bindUnbound)
 
     AddSep()
 
     -- ==================================================
-    -- ITEM SOURCE FILTERS
+    -- SOURCE SKIP-LIST (global)
+    -- Step 4: tick = SKIP (never sell); no master toggle
     -- ==================================================
-    AddHeader("|cFFFFD100Item Source Filters|r  |cFF888888(this expansion profile)|r",
-        "Filter by content type. 'Enable Source Filtering' must be ON to use.")
-    SetTooltipScope("profile")
-
-    CreateCheckbox(content, "Enable Source Filtering",
-        "When ON, only items from checked sources below are sold.",
-        function() return GetSelectedProfile().filterBySource end,
-        function(v) GetSelectedProfile().filterBySource = v end, true)
+    AddHeader("|cFFFFD100Don't sell from these sources|r  |cFF888888(tick to SKIP)|r",
+        "Ticked sources are never sold in 'matching' mode. Leave all unticked to allow every source.")
+    SetTooltipScope("global")
 
     local sourceOrder = { "consumable", "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown" }
     for _, sourceKey in ipairs(sourceOrder) do
         local source = addon.ITEM_SOURCES[sourceKey]
         if source then
-            CreateCheckbox2Col(content, source.name, "Include: " .. source.name,
-                function() return GetSelectedProfile().itemSources[sourceKey] end,
-                function(v) GetSelectedProfile().itemSources[sourceKey] = v end, true)
+            local cb = CreateCheckbox2Col(content, source.name, "SKIP " .. source.name .. " (never sell).",
+                function() return LegacyVendorDB.itemSources[sourceKey] == true end,
+                function(v) LegacyVendorDB.itemSources[sourceKey] = v and true or nil end, true)
+            table.insert(detailFrames, cb)
         end
     end
     Flush2Col()
@@ -927,20 +828,21 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- RARITY FILTERS
+    -- RARITY FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Rarity Filters|r  |cFF888888(this expansion profile)|r",
+    AddHeader("|cFFFFD100Rarity Filters|r  |cFF888888(global)|r",
         "Items must match a checked rarity to be sold.")
-    SetTooltipScope("profile")
+    SetTooltipScope("global")
 
     local rarityOrder = {0, 1, 2, 3, 4, 5, 6, 7}
     for _, rarityID in ipairs(rarityOrder) do
         local rarity = addon.RARITIES[rarityID]
         if rarity then
             local coloredName = string.format("|cFF%s%s|r", rarity.color, rarity.name)
-            CreateCheckbox2Col(content, coloredName, "Sell " .. rarity.name .. " quality items.",
-                function() return GetSelectedProfile().rarities[rarityID] end,
-                function(v) GetSelectedProfile().rarities[rarityID] = v end)
+            local cb = CreateCheckbox2Col(content, coloredName, "Sell " .. rarity.name .. " quality items.",
+                function() return LegacyVendorDB.rarities[rarityID] end,
+                function(v) LegacyVendorDB.rarities[rarityID] = v end)
+            table.insert(detailFrames, cb)
         end
     end
     Flush2Col()
@@ -948,11 +850,11 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- EQUIPMENT SLOT FILTERS
+    -- EQUIPMENT SLOT FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Equipment Slot Filters|r  |cFF888888(this expansion profile)|r",
+    AddHeader("|cFFFFD100Equipment Slot Filters|r  |cFF888888(global)|r",
         "Equippable items must match a checked slot.")
-    SetTooltipScope("profile")
+    SetTooltipScope("global")
 
     local slotOrder = {
         "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER", "INVTYPE_CLOAK",
@@ -967,9 +869,10 @@ local function CreateSimpleConfig()
     for _, slotKey in ipairs(slotOrder) do
         local slot = addon.EQUIP_SLOTS[slotKey]
         if slot then
-            CreateCheckbox2Col(content, slot.name, "Sell items in " .. slot.name .. " slot.",
-                function() return GetSelectedProfile().equipSlots[slotKey] end,
-                function(v) GetSelectedProfile().equipSlots[slotKey] = v end)
+            local cb = CreateCheckbox2Col(content, slot.name, "Sell items in " .. slot.name .. " slot.",
+                function() return LegacyVendorDB.equipSlots[slotKey] end,
+                function(v) LegacyVendorDB.equipSlots[slotKey] = v end)
+            table.insert(detailFrames, cb)
         end
     end
     Flush2Col()
@@ -977,19 +880,20 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- ITEM TYPE FILTERS
+    -- ITEM TYPE FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Non-Equippable Item Types|r  |cFF888888(this expansion profile)|r",
-        "Consumables are handled in Item Source Filters to avoid duplicate controls.")
-    SetTooltipScope("profile")
+    AddHeader("|cFFFFD100Non-Equippable Item Types|r  |cFF888888(global)|r",
+        "Consumables are handled in Source Filters to avoid duplicate controls.")
+    SetTooltipScope("global")
 
     local generalTypeOrder = {1, 12, 13, 15}
     for _, typeID in ipairs(generalTypeOrder) do
         local itemType = addon.ITEM_TYPES[typeID]
         if itemType then
-            CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. ".",
-                function() return GetSelectedProfile().itemTypes[typeID] end,
-                function(v) GetSelectedProfile().itemTypes[typeID] = v end)
+            local cb = CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. ".",
+                function() return LegacyVendorDB.itemTypes[typeID] end,
+                function(v) LegacyVendorDB.itemTypes[typeID] = v end)
+            table.insert(detailFrames, cb)
         end
     end
     Flush2Col()
@@ -998,20 +902,194 @@ local function CreateSimpleConfig()
     local craftingLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     craftingLabel:SetPoint("TOPLEFT", 10, yOffset)
     craftingLabel:SetText("|cFFFFD100Crafting & Profession Items|r  |cFF888888(off by default — protect your mats!)|r")
+    table.insert(detailFrames, craftingLabel)
     yOffset = yOffset - 20
 
     local craftingTypeOrder = {3, 5, 7, 9}
     for _, typeID in ipairs(craftingTypeOrder) do
         local itemType = addon.ITEM_TYPES[typeID]
         if itemType then
-            CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. " (off by default).",
-                function() return GetSelectedProfile().itemTypes[typeID] end,
-                function(v) GetSelectedProfile().itemTypes[typeID] = v end)
+            local cb = CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. " (off by default).",
+                function() return LegacyVendorDB.itemTypes[typeID] end,
+                function(v) LegacyVendorDB.itemTypes[typeID] = v end)
+            table.insert(detailFrames, cb)
         end
     end
     Flush2Col()
 
     AddSep()
+
+    -- ==================================================
+    -- ADVANCED: per-expansion overrides (collapsible)
+    -- Step 5: hidden by default; backed by LegacyVendorDB.showAdvanced
+    -- ==================================================
+    local advOpen = LegacyVendorDB.showAdvanced == true
+    local advHeaderText = advOpen
+        and "|cFFFFD100\xe2\x96\xbc Advanced: per-expansion overrides|r"
+        or  "|cFF888888\xe2\x96\xb6 Advanced: per-expansion overrides (click to expand)|r"
+    AddHeader(advHeaderText,
+        "Optional. Override the global filters for one specific expansion.")
+
+    -- Invisible click button over the header row
+    local advToggleBtn = CreateFrame("Button", nil, content)
+    advToggleBtn:SetPoint("TOPLEFT", 8, yOffset + 38 + 22 + 16)  -- covers header + subtitle
+    advToggleBtn:SetSize(430, 40)
+    advToggleBtn:SetScript("OnClick", function()
+        LegacyVendorDB.showAdvanced = not (LegacyVendorDB.showAdvanced == true)
+        RefreshConfigFrame()
+    end)
+
+    if advOpen then
+        -- Styled selector bar
+        local selectedExpID = GetSelectedExpansionID()
+        local selectedExp = addon.EXPANSIONS[selectedExpID]
+        local selectedLabel = selectedExp and selectedExp.name or ("Expansion " .. selectedExpID)
+
+        local selectorBg = CreateFrame("Frame", nil, content)
+        selectorBg:SetPoint("TOPLEFT", 8, yOffset)
+        selectorBg:SetPoint("TOPRIGHT", -8, yOffset)
+        selectorBg:SetHeight(30)
+        local selectorBg_bg = selectorBg:CreateTexture(nil, "BACKGROUND")
+        selectorBg_bg:SetAllPoints(selectorBg)
+        selectorBg_bg:SetColorTexture(0.05, 0.05, 0.2, 0.9)
+
+        local prevBtn = CreateFrame("Button", nil, selectorBg, "UIPanelButtonTemplate")
+        prevBtn:SetPoint("LEFT", selectorBg, "LEFT", 4, 0)
+        prevBtn:SetSize(55, 22)
+        prevBtn:SetText("< Prev")
+        prevBtn:SetScript("OnClick", function()
+            local id = GetSelectedExpansionID() - 1
+            if id < 0 then id = maxExpansion end
+            LegacyVendorDB.selectedExpansionProfileID = id
+            RefreshConfigFrame()
+        end)
+
+        local nextBtn = CreateFrame("Button", nil, selectorBg, "UIPanelButtonTemplate")
+        nextBtn:SetPoint("RIGHT", selectorBg, "RIGHT", -4, 0)
+        nextBtn:SetSize(55, 22)
+        nextBtn:SetText("Next >")
+        nextBtn:SetScript("OnClick", function()
+            local id = GetSelectedExpansionID() + 1
+            if id > maxExpansion then id = 0 end
+            LegacyVendorDB.selectedExpansionProfileID = id
+            RefreshConfigFrame()
+        end)
+
+        local expNameLabel = selectorBg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        expNameLabel:SetPoint("CENTER", selectorBg, "CENTER", 0, 0)
+        expNameLabel:SetText("|cFF00CCFFEditing: |r|cFFFFFFFF" .. selectedLabel .. "|r")
+
+        yOffset = yOffset - 38
+        SetTooltipScope("profile")
+
+        CreateCheckbox(content, "Use Detailed Filters For This Expansion",
+            "ON: apply per-expansion nested filters below for this expansion only.",
+            function() return GetSelectedProfile().useDetailedFilters end,
+            function(v) GetSelectedProfile().useDetailedFilters = v end, true)
+
+        CreateCheckbox(content, "Only Sell Lower Item Level  |cFF888888(this profile)|r",
+            "Sell equippable items only if their ilvl is lower than your equipped item in that slot.",
+            function() return GetSelectedProfile().onlySellLowerIlvl end,
+            function(v) GetSelectedProfile().onlySellLowerIlvl = v end, true)
+
+        AddSep()
+
+        -- Per-profile Bind Type
+        AddHeader("|cFFFFD100Bind Type  |cFF888888(this expansion profile)|r")
+
+        CreateCheckbox(content, "Sell Soulbound (BoP)  |cFF888888[profile]|r", "Sell Bind on Pickup items for this expansion.",
+            function() return GetSelectedProfile().bindTypes.bop end,
+            function(v) GetSelectedProfile().bindTypes.bop = v end, true)
+
+        CreateCheckbox(content, "Sell Bound BoE  |cFF888888[profile]|r", "Sell Bind on Equip items for this expansion.",
+            function() return GetSelectedProfile().bindTypes.boe end,
+            function(v) GetSelectedProfile().bindTypes.boe = v end, true)
+
+        CreateCheckbox(content, "Sell Not Bound  |cFFFF5555[profile, careful!]|r",
+            "Sell unbound items for this expansion.",
+            function() return GetSelectedProfile().bindTypes.unbound end,
+            function(v) GetSelectedProfile().bindTypes.unbound = v end, true)
+
+        AddSep()
+
+        -- Per-profile Rarity
+        AddHeader("|cFFFFD100Rarity  |cFF888888(this expansion profile)|r")
+
+        for _, rarityID in ipairs(rarityOrder) do
+            local rarity = addon.RARITIES[rarityID]
+            if rarity then
+                local coloredName = string.format("|cFF%s%s|r", rarity.color, rarity.name)
+                CreateCheckbox2Col(content, coloredName, "Sell " .. rarity.name .. " quality items (this expansion).",
+                    function() return GetSelectedProfile().rarities[rarityID] end,
+                    function(v) GetSelectedProfile().rarities[rarityID] = v end)
+            end
+        end
+        Flush2Col()
+
+        AddSep()
+
+        -- Per-profile Equipment Slots
+        AddHeader("|cFFFFD100Equipment Slots  |cFF888888(this expansion profile)|r")
+
+        for _, slotKey in ipairs(slotOrder) do
+            local slot = addon.EQUIP_SLOTS[slotKey]
+            if slot then
+                CreateCheckbox2Col(content, slot.name, "Sell items in " .. slot.name .. " slot (this expansion).",
+                    function() return GetSelectedProfile().equipSlots[slotKey] end,
+                    function(v) GetSelectedProfile().equipSlots[slotKey] = v end)
+            end
+        end
+        Flush2Col()
+
+        AddSep()
+
+        -- Per-profile Item Types
+        AddHeader("|cFFFFD100Item Types  |cFF888888(this expansion profile)|r")
+
+        for _, typeID in ipairs(generalTypeOrder) do
+            local itemType = addon.ITEM_TYPES[typeID]
+            if itemType then
+                CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. " (this expansion).",
+                    function() return GetSelectedProfile().itemTypes[typeID] end,
+                    function(v) GetSelectedProfile().itemTypes[typeID] = v end)
+            end
+        end
+        Flush2Col()
+
+        for _, typeID in ipairs(craftingTypeOrder) do
+            local itemType = addon.ITEM_TYPES[typeID]
+            if itemType then
+                CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. " (this expansion, off by default).",
+                    function() return GetSelectedProfile().itemTypes[typeID] end,
+                    function(v) GetSelectedProfile().itemTypes[typeID] = v end)
+            end
+        end
+        Flush2Col()
+
+        AddSep()
+
+        -- Per-profile Source Filtering
+        AddHeader("|cFFFFD100Source Filtering  |cFF888888(this expansion profile)|r")
+
+        CreateCheckbox(content, "Enable Source Filtering  |cFF888888[profile]|r",
+            "When ON, only items from checked sources below are sold for this expansion.",
+            function() return GetSelectedProfile().filterBySource end,
+            function(v) GetSelectedProfile().filterBySource = v end, true)
+
+        for _, sourceKey in ipairs(sourceOrder) do
+            local source = addon.ITEM_SOURCES[sourceKey]
+            if source then
+                CreateCheckbox2Col(content, source.name, "Include: " .. source.name .. " (this expansion).",
+                    function() return GetSelectedProfile().itemSources[sourceKey] end,
+                    function(v) GetSelectedProfile().itemSources[sourceKey] = v end, true)
+            end
+        end
+        Flush2Col()
+
+        AddSep()
+    end -- advOpen
+
+    SetTooltipScope("global")
 
     -- ==================================================
     -- QUICK ACTIONS
@@ -1030,31 +1108,28 @@ local function CreateSimpleConfig()
     end)
     yOffset = yOffset - 30
 
-    MakeBtn(10, "All Equip Slots (profile)", function()
-        local p = GetSelectedProfile()
-        for k in pairs(addon.EQUIP_SLOTS) do p.equipSlots[k] = true end
+    -- Quick Actions: equip slots and rarities now target global DB fields
+    MakeBtn(10, "All Equip Slots (global)", function()
+        for k in pairs(addon.EQUIP_SLOTS) do LegacyVendorDB.equipSlots[k] = true end
         addon.Print("All equipment slots enabled.")
         RefreshConfigFrame()
     end)
-    MakeBtn(214, "Disable All Slots (profile)", function()
-        local p = GetSelectedProfile()
-        for k in pairs(addon.EQUIP_SLOTS) do p.equipSlots[k] = false end
+    MakeBtn(214, "Disable All Slots (global)", function()
+        for k in pairs(addon.EQUIP_SLOTS) do LegacyVendorDB.equipSlots[k] = false end
         addon.Print("All equipment slots disabled.")
         RefreshConfigFrame()
     end)
     yOffset = yOffset - 30
 
     MakeBtn(10, "Safe Rarities (G/U/R/E)", function()
-        local p = GetSelectedProfile()
-        p.rarities[0]=true;  p.rarities[1]=false; p.rarities[2]=true
-        p.rarities[3]=true;  p.rarities[4]=true;  p.rarities[5]=false
-        p.rarities[6]=false; p.rarities[7]=false
+        LegacyVendorDB.rarities[0]=true;  LegacyVendorDB.rarities[1]=false; LegacyVendorDB.rarities[2]=true
+        LegacyVendorDB.rarities[3]=true;  LegacyVendorDB.rarities[4]=true;  LegacyVendorDB.rarities[5]=false
+        LegacyVendorDB.rarities[6]=false; LegacyVendorDB.rarities[7]=false
         addon.Print("Safe rarities enabled.")
         RefreshConfigFrame()
     end)
     MakeBtn(214, "Disable All Rarities", function()
-        local p = GetSelectedProfile()
-        for rarityID in pairs(addon.RARITIES) do p.rarities[rarityID] = false end
+        for rarityID in pairs(addon.RARITIES) do LegacyVendorDB.rarities[rarityID] = false end
         addon.Print("All rarities disabled.")
         RefreshConfigFrame()
     end)
