@@ -174,3 +174,17 @@ T.test("summary: matching mode with rarity + skip", function()
   T.eq(s.mode, "matching")
   T.eq(s.headline, "Selling Rare gear from Wrath (skipping Consumables).")
 end)
+
+-- Regression: WoW's Lua 5.1 does not honor \xHH hex escapes (they mangle to literal "xHH").
+-- This harness runs under Lua 5.4, which DOES support \x, so such bugs pass tests but break
+-- in-game. Guard every shipped file: use decimal \ddd or raw UTF-8 bytes instead.
+T.test("no \\xHH hex escapes in shipped lua files", function()
+  local shipped = { "Filters.lua", "Core.lua", "Config.lua", "Compat.lua" }
+  for _, path in ipairs(shipped) do
+    local f = assert(io.open(path, "r"))
+    local content = f:read("*a")
+    f:close()
+    local at = content:find("\\x%x")
+    T.eq(at, nil, path .. " contains a \\xHH hex escape (use decimal \\ddd or raw UTF-8)")
+  end
+end)

@@ -229,7 +229,7 @@ local function CreateSimpleConfig()
     -- Step 6: summary consumes addon.BuildActiveSummary
     local function RefreshSummary()
         local s = addon.BuildActiveSummary(LegacyVendorDB)
-        topSummaryText:SetText("|cFF44FF44\xE2\x9C\x94 " .. s.headline .. "|r")
+        topSummaryText:SetText("|cFF44FF44\226\156\148 " .. s.headline .. "|r")
         local detail = (#s.chips > 0) and table.concat(s.chips, "   ") or ""
         bottomSummaryText:SetText(detail)
         bottomSummaryText:SetTextColor(
@@ -366,7 +366,7 @@ local function CreateSimpleConfig()
     local function MakeBtn(xOff, label, onClick)
         local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         btn:SetPoint("TOPLEFT", xOff, yOffset)
-        btn:SetSize(195, 24)
+        btn:SetSize(205, 24)
         btn:SetText(label)
         btn:SetScript("OnClick", onClick)
         return btn
@@ -405,6 +405,16 @@ local function CreateSimpleConfig()
         "Use the rarity / source / slot / type / bind filters below.",
         function() return LegacyVendorDB.sellMode == "matching" end,
         function() SetMode("matching") end)
+
+    -- Mode-aware hint: explains why the detailed filter sections are greyed in "everything" mode.
+    if LegacyVendorDB.sellMode ~= "matching" then
+        local modeHint = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        modeHint:SetPoint("TOPLEFT", 26, yOffset)
+        modeHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, yOffset)
+        modeHint:SetJustifyH("LEFT")
+        modeHint:SetText("|cFFFFCC00The Rarity / Source / Slot / Type filters below are OFF in this mode (that is why they are greyed). Pick \"Only sell items MATCHING my filters\" above to use them.|r")
+        yOffset = yOffset - 32
+    end
 
     CreateCheckbox(content, "Strict Seasonal M+ Protection  |cFF44FF44(recommended)|r",
         "Hard-protect current-season scaled legacy dungeon items. Overrides all sell filters.",
@@ -600,8 +610,8 @@ local function CreateSimpleConfig()
     -- ==================================================
     local advOpen = LegacyVendorDB.showAdvanced == true
     local advHeaderText = advOpen
-        and "|cFFFFD100\xe2\x96\xbc Advanced: per-expansion overrides|r"
-        or  "|cFF888888\xe2\x96\xb6 Advanced: per-expansion overrides (click to expand)|r"
+        and "|cFFFFD100\226\150\188 Advanced: per-expansion overrides|r"
+        or  "|cFF888888\226\150\182 Advanced: per-expansion overrides (click to expand)|r"
     AddHeader(advHeaderText,
         "Optional. Override the global filters for one specific expansion.")
 
@@ -771,12 +781,12 @@ local function CreateSimpleConfig()
     -- ==================================================
     AddHeader("|cFFFFD100Quick Actions|r")
 
-    MakeBtn(10, "Enable All Legacy Expansions", function()
+    MakeBtn(10, "Enable Legacy Expansions", function()
         for i = 0, addon.CURRENT_EXPANSION - 1 do LegacyVendorDB.expansions[i] = true end
         addon.Print("All legacy expansions enabled.")
         RefreshConfigFrame()
     end)
-    MakeBtn(214, "Disable All Expansions", function()
+    MakeBtn(216, "Disable All Expansions", function()
         for i = 0, addon.CURRENT_EXPANSION do LegacyVendorDB.expansions[i] = false end
         addon.Print("All expansions disabled.")
         RefreshConfigFrame()
@@ -784,12 +794,12 @@ local function CreateSimpleConfig()
     yOffset = yOffset - 30
 
     -- Quick Actions: equip slots and rarities now target global DB fields
-    MakeBtn(10, "All Equip Slots (global)", function()
+    MakeBtn(10, "Enable All Equip Slots", function()
         for k in pairs(addon.EQUIP_SLOTS) do LegacyVendorDB.equipSlots[k] = true end
         addon.Print("All equipment slots enabled.")
         RefreshConfigFrame()
     end)
-    MakeBtn(214, "Disable All Slots (global)", function()
+    MakeBtn(216, "Disable All Equip Slots", function()
         for k in pairs(addon.EQUIP_SLOTS) do LegacyVendorDB.equipSlots[k] = false end
         addon.Print("All equipment slots disabled.")
         RefreshConfigFrame()
@@ -803,7 +813,7 @@ local function CreateSimpleConfig()
         addon.Print("Safe rarities enabled.")
         RefreshConfigFrame()
     end)
-    MakeBtn(214, "Disable All Rarities", function()
+    MakeBtn(216, "Disable All Rarities", function()
         for rarityID in pairs(addon.RARITIES) do LegacyVendorDB.rarities[rarityID] = false end
         addon.Print("All rarities disabled.")
         RefreshConfigFrame()
