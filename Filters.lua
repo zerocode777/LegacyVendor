@@ -76,3 +76,70 @@ function addon.ResolveActiveFilters(db, expansionID)
     onlyLowerIlvl = db.onlySellLowerIlvl == true,
   }
 end
+
+local SOURCE_LABELS = {
+  consumable = "Consumables", dungeon = "Dungeons", raid = "Raids", outdoor = "World",
+  profession = "Professions", vendor = "Vendor", pvp = "PvP", reputation = "Reputation",
+  housing = "Housing", unknown = "Other",
+}
+
+local function expName(db, id)
+  if db.__names then return db.__names.exp[id] end
+  local e = addon.EXPANSIONS and addon.EXPANSIONS[id]
+  return e and (e.short or e.name) or ("Exp " .. id)
+end
+
+local function rarName(db, id)
+  if db.__names then return db.__names.rar[id] end
+  local r = addon.RARITIES and addon.RARITIES[id]
+  return r and r.name or tostring(id)
+end
+
+local function enabledExpansionNames(db)
+  local names = {}
+  for id, on in pairs(db.expansions or {}) do
+    if on then names[#names + 1] = { id = id, name = expName(db, id) } end
+  end
+  table.sort(names, function(a, b) return a.id < b.id end)
+  local out = {}
+  for _, n in ipairs(names) do out[#out + 1] = n.name end
+  return out
+end
+
+local function joinList(t)
+  if #t == 0 then return "" end
+  if #t == 1 then return t[1] end
+  if #t == 2 then return t[1] .. " & " .. t[2] end
+  return table.concat(t, ", ", 1, #t - 1) .. " & " .. t[#t]
+end
+
+function addon.BuildActiveSummary(db)
+  local mode = db.sellMode or "everything"
+  local exps = enabledExpansionNames(db)
+  if #exps == 0 then
+    return { mode = mode, chips = {}, headline = "Nothing will sell — no expansions enabled." }
+  end
+  local expText = joinList(exps)
+
+  if mode == "everything" then
+    return { mode = mode, chips = {}, headline = "Selling everything from " .. expText .. "." }
+  end
+
+  local resolved = addon.ResolveActiveFilters(db, db.selectedExpansionProfileID or 0)
+
+  local rarNames = {}
+  for id = 0, 7 do if resolved.rarities[id] then rarNames[#rarNames + 1] = rarName(db, id) end end
+  local rarText = (#rarNames > 0) and joinList(rarNames) or "all"
+
+  local skipped = {}
+  for k, v in pairs(resolved.itemSources) do if v == true then skipped[#skipped + 1] = SOURCE_LABELS[k] or k end end
+  table.sort(skipped)
+  local skipNote = (#skipped > 0) and (" (skipping " .. joinList(skipped) .. ")") or ""
+
+  local chips = {
+    "Rarity ▸ " .. rarText,
+    "Source ▸ " .. ((#skipped > 0) and ("skip " .. joinList(skipped)) or "all"),
+    "Expansions ▸ " .. expText,
+  }
+  return { mode = mode, chips = chips, headline = "Selling " .. rarText .. " gear from " .. expText .. skipNote .. "." }
+end

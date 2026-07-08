@@ -139,3 +139,38 @@ T.test("resolve handles nil expansionID without crashing", function()
   T.eq(r.usedOverride, false)
   T.eq(r.rarities[2], true)
 end)
+
+T.test("summary: everything mode headline", function()
+  local db = {
+    sellMode = "everything",
+    expansions = { [8] = true, [10] = false },
+    __names = { exp = { [8] = "Wrath" }, rar = {} },
+    rarities = {}, itemSources = {}, expansionProfiles = {},
+  }
+  local s = addon.BuildActiveSummary(db)
+  T.eq(s.mode, "everything")
+  T.eq(s.headline, "Selling everything from Wrath.")
+  T.eq(#s.chips, 0)
+end)
+
+T.test("summary: no expansions", function()
+  local db = { sellMode = "everything", expansions = {}, __names = { exp = {}, rar = {} },
+               rarities = {}, itemSources = {}, expansionProfiles = {} }
+  T.eq(addon.BuildActiveSummary(db).headline, "Nothing will sell — no expansions enabled.")
+end)
+
+T.test("summary: matching mode with rarity + skip", function()
+  local db = {
+    sellMode = "matching",
+    expansions = { [8] = true },
+    rarities = { [3] = true },
+    itemSources = { consumable = true },
+    onlySellLowerIlvl = false,
+    expansionProfiles = { [8] = { useDetailedFilters = false } },
+    selectedExpansionProfileID = 8,
+    __names = { exp = { [8] = "Wrath" }, rar = { [3] = "Rare" } },
+  }
+  local s = addon.BuildActiveSummary(db)
+  T.eq(s.mode, "matching")
+  T.eq(s.headline, "Selling Rare gear from Wrath (skipping Consumables).")
+end)
