@@ -1379,7 +1379,7 @@ local function FindButtonForBagSlot(bag, slot)
     while frame do
         if frame.GetObjectType then
             local objType = frame:GetObjectType()
-            if objType == "Button" or objType == "CheckButton" then
+            if objType == "Button" or objType == "CheckButton" or objType == "ItemButton" then
                 AddCandidate(frame, "global-enum")
             end
         end
