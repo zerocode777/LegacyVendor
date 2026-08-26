@@ -1460,8 +1460,16 @@ local function CollectCustomBagButtons()
     return buttons, source, scanned
 end
 
+local UpdateBagHighlightsBody
+
 local function UpdateBagHighlights()
     ClearBagHighlights()
+
+    if LegacyVendorDB and LegacyVendorDB.debug then
+        DebugPrint("UpdateBagHighlights: enter, enabled=", tostring(LegacyVendorDB and LegacyVendorDB.enabled),
+            "highlightItems=", tostring(LegacyVendorDB and LegacyVendorDB.highlightItems),
+            "merchantShown=", tostring(MerchantFrame and MerchantFrame:IsShown()))
+    end
 
     if not LegacyVendorDB or not LegacyVendorDB.enabled or not LegacyVendorDB.highlightItems then
         return
@@ -1471,6 +1479,13 @@ local function UpdateBagHighlights()
         return
     end
 
+    local ok, err = pcall(UpdateBagHighlightsBody)
+    if not ok and LegacyVendorDB and LegacyVendorDB.debug then
+        DebugPrint("UpdateBagHighlights: ERROR:", tostring(err))
+    end
+end
+
+UpdateBagHighlightsBody = function()
     -- Custom UI direct path: evaluate custom bag slot buttons first (ElvUI, WindTools wrappers).
     local customButtons, customSource, customScanned = CollectCustomBagButtons()
     local customApplied = 0
