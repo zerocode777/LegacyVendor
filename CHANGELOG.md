@@ -5,6 +5,22 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-08-26
+
+### Fixed
+- Bag item highlighting could silently fail to appear entirely (not just with EllesmereUI - any
+  setup exercising this code path) whenever an item actually qualified to sell. The button-finding
+  scan crashed on a Blizzard API whose iterator now returns `(index, frame)` pairs instead of a
+  bare frame; the scan only captured one loop variable, bound it to the index number, then errored
+  indexing it - aborting the whole highlight pass before any item got marked. Fixed the iterator
+  usage and wrapped the scan in a guard so a future API surprise degrades to "no highlight" instead
+  of silently killing the pass.
+
+### Added
+- `/lv exportlog` opens a copyable text window with the full debug log (Ctrl+A, Ctrl+C), plus a
+  Clear Log button. Debug Mode no longer prints to the chat frame - it buffers into this window
+  instead, so a report can be pasted as plain text rather than cropped screenshots.
+
 ## [2.2.1] - 2026-08-26
 
 ### Fixed

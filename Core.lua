@@ -1420,8 +1420,13 @@ local function FindButtonForBagSlot(bag, slot)
     end
 
     -- Modern bag frames using itemButtonPool.
+    -- NOTE: this Blizzard iterator's return shape has changed across client versions -
+    -- some builds yield just the frame, others yield (index, frame) like ipairs. Only
+    -- naming one loop variable silently binds it to whichever comes first (an index
+    -- number on the ipairs-style builds), so pick whichever of the two is a table.
     if ContainerFrameUtil_EnumerateContainerFrames then
-        for containerFrame in ContainerFrameUtil_EnumerateContainerFrames() do
+        for a, b in ContainerFrameUtil_EnumerateContainerFrames() do
+            local containerFrame = (type(b) == "table" and b) or (type(a) == "table" and a) or nil
             if containerFrame and containerFrame.itemButtonPool and containerFrame.itemButtonPool.EnumerateActive then
                 for button in containerFrame.itemButtonPool:EnumerateActive() do
                     AddCandidate(button, "container-util")
