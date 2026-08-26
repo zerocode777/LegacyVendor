@@ -5,6 +5,17 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] - 2026-08-26
+
+### Fixed
+- The 2.2.3 fix only isolated the final ApplyHighlight step; the same unrelated-addon crash
+  (Blizzard_BuffFrame.lua indexing a nil `buttonInfo`, from another addon's hook) was still
+  hitting earlier, inside the button-finding scan itself - specifically while walking every
+  frame in the UI looking for the right bag slot's button, which inevitably touches other
+  addons' buttons (buff icons, etc.). That walk now isolates each candidate frame it inspects,
+  so one unrelated addon's broken hook only skips that one frame instead of failing the whole
+  search for that bag slot.
+
 ## [2.2.3] - 2026-08-26
 
 ### Fixed

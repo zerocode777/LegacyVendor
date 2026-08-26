@@ -1349,7 +1349,7 @@ local function FindButtonForBagSlot(bag, slot)
     local seen = {}
     local isElvUILoaded = IsAddonLoadedSafe("ElvUI")
 
-    local function AddCandidate(button, source)
+    local function AddCandidateImpl(button, source)
         if not button or seen[button] then
             return
         end
@@ -1404,6 +1404,16 @@ local function FindButtonForBagSlot(bag, slot)
         score = score + (math.min(w, h) * 0.2)
 
         table.insert(candidates, { button = button, score = score })
+    end
+
+    -- A candidate frame belongs to another addon; an unrelated hook on a widget
+    -- method it uses (e.g. buff-icon skinning) can throw when we merely inspect
+    -- it. Isolate every call so one bad frame doesn't stop us finding the real target.
+    local function AddCandidate(button, source)
+        local ok, err = pcall(AddCandidateImpl, button, source)
+        if not ok and LegacyVendorDB and LegacyVendorDB.debug then
+            DebugPrint("AddCandidate error:", "source=", source, tostring(err))
+        end
     end
 
     -- Deterministic ElvUI path first.
@@ -1461,12 +1471,14 @@ local function FindButtonForBagSlot(bag, slot)
         end
     end
 
-    -- Addon-agnostic frame enumeration.
+    -- Addon-agnostic frame enumeration. Walking every frame in the UI means we
+    -- inevitably touch buttons owned by other addons (buff icons, etc.) - AddCandidate
+    -- above already isolates each one, GetObjectType itself gets the same treatment here.
     local frame = EnumerateFrames()
     while frame do
         if frame.GetObjectType then
-            local objType = frame:GetObjectType()
-            if objType == "Button" or objType == "CheckButton" or objType == "ItemButton" then
+            local okType, objType = pcall(frame.GetObjectType, frame)
+            if okType and (objType == "Button" or objType == "CheckButton" or objType == "ItemButton") then
                 AddCandidate(frame, "global-enum")
             end
         end
@@ -1618,7 +1630,16 @@ UpdateBagHighlightsBody = function()
         for slot = 1, numSlots do
             local shouldSell = ShouldSellItem(bag, slot)
             if shouldSell then
-                local button = FindButtonForBagSlot(bag, slot)
+                -- FindButtonForBagSlot walks every frame in the UI (including other
+                -- addons' buttons); an unrelated hook on one of them can throw here too,
+                -- so isolate it the same way ApplyHighlight is isolated below.
+                local findOk, button = pcall(FindButtonForBagSlot, bag, slot)
+                if not findOk then
+                    if LegacyVendorDB and LegacyVendorDB.debug then
+                        DebugPrint("FindButtonForBagSlot error:", "bag=", bag, "slot=", slot, tostring(button))
+                    end
+                    button = nil
+                end
                 if LegacyVendorDB and LegacyVendorDB.debug and not firstFallbackTargetLogged then
                     local btnName = (button and button.GetName and button:GetName()) or "<anon>"
                     local btnType = (button and button.GetObjectType and button:GetObjectType()) or "<nil>"
