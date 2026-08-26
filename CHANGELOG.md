@@ -5,6 +5,19 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] - 2026-08-26
+
+### Fixed
+- Opening bags or the vendor could freeze the client for several seconds once bag highlighting
+  actually had items to highlight. The button-finding fallback did two whole-UI scans (every
+  frame in the game, every global variable) and was redoing both from scratch for every single
+  sellable item, on every highlight retry - up to hundreds of full UI walks per vendor visit.
+- Added a scoped scan of EllesmereUI's own bag window (its frame tree only, not the whole UI) so
+  its item buttons are found directly, the same way ElvUI's already were - the expensive whole-UI
+  fallback is no longer reached at all during normal use with EllesmereUI installed. Also fixed a
+  gap where, even after finding an addon's own button pool, the code could still fall through to
+  the expensive scan if nothing in that pool happened to be sellable in a given pass.
+
 ## [2.2.4] - 2026-08-26
 
 ### Fixed
