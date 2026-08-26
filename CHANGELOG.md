@@ -5,6 +5,17 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Declared `## Interface` versions in every .toc were stale, which could make the client flag
+  LegacyVendor as out of date depending on client settings. Updated to match current live patches:
+  Retail 12.1.0 (120100, verified against the installed client's own build info), Classic Era
+  1.15.9 (11509), TBC Classic Anniversary 2.5.6 (20506, the Phase 3 client patch), and Mists of
+  Pandaria Classic 5.5.4 (50504). This is metadata only - `Compat.lua` already detects the actual
+  running client version at runtime via `GetBuildInfo()`, so expansion-detection logic itself was
+  never affected.
+
 ## [2.2.5] - 2026-08-26
 
 ### Fixed
