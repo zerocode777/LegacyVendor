@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running client version at runtime via `GetBuildInfo()`, so expansion-detection logic itself was
   never affected.
 
+### Changed
+- Redesigned the bag highlight: the rotating orange "marching ants" border is replaced with a
+  slow, smooth-pulsing light purple glow frame (a soft outer wash plus a crisp thin border on
+  each edge). Same detection/sell logic, just a calmer, more modern look. Existing saves still on
+  the old red default are migrated to the new color automatically; anyone with a genuinely
+  customized color keeps it.
+
 ## [2.2.5] - 2026-08-26
 
 ### Fixed

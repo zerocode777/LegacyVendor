@@ -218,7 +218,7 @@ local defaults = {
     itemSources = {}, -- Source filter settings (vendor, crafted, dropped, etc.)
     filterBySource = false, -- Whether to apply source filtering at all
     highlightItems = true, -- Highlight sellable items in bags
-    highlightColor = { r = 1, g = 0.2, b = 0.2, a = 0.8 }, -- Red glow by default
+    highlightColor = { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }, -- Light purple glow by default
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -982,14 +982,13 @@ local function ClearBagHighlights()
         if hl and hl.driver then
             hl.driver:SetScript("OnUpdate", nil)
         end
-        if hl and hl.ants then
-            for _, ant in ipairs(hl.ants) do
-                ant:Hide()
-            end
+        if hl and hl.glow then
+            hl.glow:Hide()
         end
-        if hl and hl.fill then
-            hl.fill:Hide()
-        end
+        if hl and hl.edgeTop then hl.edgeTop:Hide() end
+        if hl and hl.edgeBottom then hl.edgeBottom:Hide() end
+        if hl and hl.edgeLeft then hl.edgeLeft:Hide() end
+        if hl and hl.edgeRight then hl.edgeRight:Hide() end
         if hl and hl.border and hl.border.SetVertexColor then
             if hl.borderOrigColor then
                 hl.border:SetVertexColor(hl.borderOrigColor.r, hl.borderOrigColor.g, hl.borderOrigColor.b, hl.borderOrigColor.a)
@@ -1093,36 +1092,19 @@ local function GetButtonBagAndSlot(button)
     return tonumber(bag), tonumber(slot)
 end
 
-local function LayoutMarchingAnts(button, hl, phase, count)
-    local w = (button:GetWidth() or 36) + 8
-    local h = (button:GetHeight() or 36) + 8
-    local halfW = w * 0.5
-    local halfH = h * 0.5
-    local perimeter = (2 * w) + (2 * h)
+-- Smooth breathing pulse (no movement, just alpha) driving the glow border/wash.
+-- phase is in [0,1); a full sine cycle per phase wrap.
+local function UpdateGlowPulse(hl, phase)
+    local t = (math.sin(phase * math.pi * 2) + 1) * 0.5 -- 0..1, smooth ease in/out
 
-    for i = 1, count do
-        local ant = hl.ants[i]
-        local t = ((i - 1) / count) + phase
-        t = t - math.floor(t)
-        local d = t * perimeter
-        local x, y
+    local edgeAlpha = 0.55 + (0.45 * t)
+    if hl.edgeTop then hl.edgeTop:SetAlpha(edgeAlpha) end
+    if hl.edgeBottom then hl.edgeBottom:SetAlpha(edgeAlpha) end
+    if hl.edgeLeft then hl.edgeLeft:SetAlpha(edgeAlpha) end
+    if hl.edgeRight then hl.edgeRight:SetAlpha(edgeAlpha) end
 
-        if d < w then
-            x = -halfW + d
-            y = halfH
-        elseif d < (w + h) then
-            x = halfW
-            y = halfH - (d - w)
-        elseif d < (2 * w + h) then
-            x = halfW - (d - (w + h))
-            y = -halfH
-        else
-            x = -halfW
-            y = -halfH + (d - (2 * w + h))
-        end
-
-        ant:ClearAllPoints()
-        ant:SetPoint("CENTER", button, "CENTER", x, y)
+    if hl.glow then
+        hl.glow:SetAlpha(0.12 + (0.18 * t))
     end
 end
 
@@ -1165,8 +1147,8 @@ local function ApplyHighlight(button)
         hl.host = CreateFrame("Frame", nil, button)
         local iconRegion = button.Icon or button.icon
         if iconRegion then
-            hl.host:SetPoint("TOPLEFT", iconRegion, "TOPLEFT", -1, 1)
-            hl.host:SetPoint("BOTTOMRIGHT", iconRegion, "BOTTOMRIGHT", 1, -1)
+            hl.host:SetPoint("TOPLEFT", iconRegion, "TOPLEFT", -2, 2)
+            hl.host:SetPoint("BOTTOMRIGHT", iconRegion, "BOTTOMRIGHT", 2, -2)
         else
             hl.host:SetAllPoints(button)
         end
@@ -1178,21 +1160,43 @@ local function ApplyHighlight(button)
             hl.host:SetIgnoreParentAlpha(true)
         end
 
-        hl.fill = hl.host:CreateTexture(nil, "OVERLAY")
-        hl.fill:SetPoint("TOPLEFT", hl.host, "TOPLEFT", 0, 0)
-        hl.fill:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 0, 0)
-        hl.fill:SetBlendMode("ADD")
+        -- Soft outer glow wash, sitting just outside the crisp border below.
+        hl.glow = hl.host:CreateTexture(nil, "BACKGROUND")
+        hl.glow:SetPoint("TOPLEFT", hl.host, "TOPLEFT", -3, 3)
+        hl.glow:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 3, -3)
+        hl.glow:SetTexture("Interface\\Buttons\\WHITE8X8")
+        hl.glow:SetBlendMode("ADD")
 
-        hl.ants = {}
-        local antCount = 34
-        hl.antCount = antCount
-        for i = 1, antCount do
-            local ant = hl.host:CreateTexture(nil, "OVERLAY")
-            ant:SetSize(3, 3)
-            ant:SetTexture("Interface\\Buttons\\WHITE8X8")
-            ant:SetBlendMode("ADD")
-            hl.ants[i] = ant
-        end
+        -- Crisp pulsing border, one thin bar per edge, flush with the icon.
+        local edgeThickness = 2
+
+        hl.edgeTop = hl.host:CreateTexture(nil, "OVERLAY")
+        hl.edgeTop:SetTexture("Interface\\Buttons\\WHITE8X8")
+        hl.edgeTop:SetBlendMode("ADD")
+        hl.edgeTop:SetHeight(edgeThickness)
+        hl.edgeTop:SetPoint("TOPLEFT", hl.host, "TOPLEFT", 0, 0)
+        hl.edgeTop:SetPoint("TOPRIGHT", hl.host, "TOPRIGHT", 0, 0)
+
+        hl.edgeBottom = hl.host:CreateTexture(nil, "OVERLAY")
+        hl.edgeBottom:SetTexture("Interface\\Buttons\\WHITE8X8")
+        hl.edgeBottom:SetBlendMode("ADD")
+        hl.edgeBottom:SetHeight(edgeThickness)
+        hl.edgeBottom:SetPoint("BOTTOMLEFT", hl.host, "BOTTOMLEFT", 0, 0)
+        hl.edgeBottom:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 0, 0)
+
+        hl.edgeLeft = hl.host:CreateTexture(nil, "OVERLAY")
+        hl.edgeLeft:SetTexture("Interface\\Buttons\\WHITE8X8")
+        hl.edgeLeft:SetBlendMode("ADD")
+        hl.edgeLeft:SetWidth(edgeThickness)
+        hl.edgeLeft:SetPoint("TOPLEFT", hl.host, "TOPLEFT", 0, 0)
+        hl.edgeLeft:SetPoint("BOTTOMLEFT", hl.host, "BOTTOMLEFT", 0, 0)
+
+        hl.edgeRight = hl.host:CreateTexture(nil, "OVERLAY")
+        hl.edgeRight:SetTexture("Interface\\Buttons\\WHITE8X8")
+        hl.edgeRight:SetBlendMode("ADD")
+        hl.edgeRight:SetWidth(edgeThickness)
+        hl.edgeRight:SetPoint("TOPRIGHT", hl.host, "TOPRIGHT", 0, 0)
+        hl.edgeRight:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 0, 0)
 
         hl.driver = CreateFrame("Frame", nil, hl.host)
         hl.phase = 0
@@ -1217,18 +1221,22 @@ local function ApplyHighlight(button)
         button.LegacyVendorHighlight = hl
     end
 
-    local color = (LegacyVendorDB and LegacyVendorDB.highlightColor) or { r = 1, g = 0.2, b = 0.2, a = 0.8 }
-    local r = color.r or 1
-    local g = color.g or 0.2
-    local b = color.b or 0.2
-    local a = color.a or 0.8
+    local color = (LegacyVendorDB and LegacyVendorDB.highlightColor) or { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }
+    local r = color.r or 0.68
+    local g = color.g or 0.45
+    local b = color.b or 1.0
 
-    hl.fill:SetColorTexture(r, g, b, 0)
+    hl.glow:SetVertexColor(r, g, b, 1)
+    hl.glow:Show()
 
-    for _, ant in ipairs(hl.ants) do
-        ant:SetVertexColor(r, g, b, 1)
-        ant:Show()
-    end
+    hl.edgeTop:SetVertexColor(r, g, b, 1)
+    hl.edgeBottom:SetVertexColor(r, g, b, 1)
+    hl.edgeLeft:SetVertexColor(r, g, b, 1)
+    hl.edgeRight:SetVertexColor(r, g, b, 1)
+    hl.edgeTop:Show()
+    hl.edgeBottom:Show()
+    hl.edgeLeft:Show()
+    hl.edgeRight:Show()
 
     if hl.border and hl.border.SetVertexColor then
         if hl.borderOrigColor then
@@ -1240,9 +1248,7 @@ local function ApplyHighlight(button)
         hl.icon:SetVertexColor(hl.iconOrigColor.r, hl.iconOrigColor.g, hl.iconOrigColor.b, hl.iconOrigColor.a)
     end
 
-    hl.fill:Hide()
-
-    LayoutMarchingAnts(hl.host, hl, hl.phase or 0, hl.antCount)
+    UpdateGlowPulse(hl, hl.phase or 0)
     hl.driver:SetScript("OnUpdate", function(_, elapsed)
         hl.accum = (hl.accum or 0) + elapsed
         if hl.accum < 0.03 then
@@ -1251,8 +1257,8 @@ local function ApplyHighlight(button)
 
         local dt = hl.accum
         hl.accum = 0
-        hl.phase = ((hl.phase or 0) + (dt * 0.9)) % 1
-        LayoutMarchingAnts(hl.host, hl, hl.phase, hl.antCount)
+        hl.phase = ((hl.phase or 0) + (dt * 0.5)) % 1 -- ~2 second breathing cycle
+        UpdateGlowPulse(hl, hl.phase)
     end)
 
     activeBagHighlights[button] = hl
@@ -1929,6 +1935,17 @@ local function OnEvent(self, event, ...)
                     if LegacyVendorDB[k] == nil then
                         LegacyVendorDB[k] = v
                     end
+                end
+
+                -- One-time migration: an existing save may still have the old red
+                -- highlight color baked in from before the light-purple redesign.
+                -- Upgrade it if it looks untouched (exactly the old default); leave
+                -- alone if it was ever customized.
+                if LegacyVendorDB.highlightColor
+                    and LegacyVendorDB.highlightColor.r == 1
+                    and LegacyVendorDB.highlightColor.g == 0.2
+                    and LegacyVendorDB.highlightColor.b == 0.2 then
+                    LegacyVendorDB.highlightColor = { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }
                 end
                 -- Ensure all expansions have settings (only for available expansions)
                 local maxExp = addon.MAX_EXPANSION or addon.CURRENT_EXPANSION
