@@ -5,6 +5,17 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-08-26
+
+### Fixed
+- Bag highlighting could still silently apply to zero items in a pass: an unrelated addon
+  crashing inside Blizzard's own BuffFrame code (seen triggered by another UI's aura/skin hooks
+  reacting to a shared texture's SetVertexColor call) was propagating up through the highlight
+  scan's single outer guard and aborting the entire batch, even though it wasn't caused by
+  LegacyVendor. Each item's highlight is now applied in its own isolated try, so one unrelated
+  crash only skips that one item instead of cancelling the whole pass (which retries every 0.25s
+  anyway while the vendor is open).
+
 ## [2.2.2] - 2026-08-26
 
 ### Fixed

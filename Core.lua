@@ -1590,8 +1590,15 @@ UpdateBagHighlightsBody = function()
                 if IsValidButtonCandidate(btn, b, s) and ShouldSellItem(b, s) then
                     local shown = (btn.IsShown and btn:IsShown()) or (btn.IsVisible and btn:IsVisible())
                     if shown then
-                        ApplyHighlight(btn)
-                        customApplied = customApplied + 1
+                        -- Isolate each button: an unrelated addon's hook on a shared widget
+                        -- method (SetVertexColor, etc.) can throw and must not abort the
+                        -- rest of the batch.
+                        local applyOk, applyErr = pcall(ApplyHighlight, btn)
+                        if applyOk then
+                            customApplied = customApplied + 1
+                        elseif LegacyVendorDB and LegacyVendorDB.debug then
+                            DebugPrint("ApplyHighlight error (custom):", tostring(applyErr))
+                        end
                     end
                 end
             end
@@ -1624,8 +1631,12 @@ UpdateBagHighlightsBody = function()
                     firstFallbackTargetLogged = true
                 end
                 if button and ((button.IsShown and button:IsShown()) or (button.IsVisible and button:IsVisible())) then
-                    ApplyHighlight(button)
-                    fallbackApplied = fallbackApplied + 1
+                    local applyOk, applyErr = pcall(ApplyHighlight, button)
+                    if applyOk then
+                        fallbackApplied = fallbackApplied + 1
+                    elseif LegacyVendorDB and LegacyVendorDB.debug then
+                        DebugPrint("ApplyHighlight error (fallback):", "bag=", bag, "slot=", slot, tostring(applyErr))
+                    end
                 end
             end
         end
