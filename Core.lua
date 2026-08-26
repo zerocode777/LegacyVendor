@@ -1344,7 +1344,41 @@ local function FindElvUIBagButtonForBagSlot(bag, slot)
     return ScanElvFrame(Bags.BagFrame) or ScanElvFrame(Bags.BankFrame)
 end
 
-local function FindButtonForBagSlot(bag, slot)
+-- The two whole-UI scans below (every frame in the game, every global variable)
+-- are expensive. FindButtonForBagSlot used to redo both from scratch for every
+-- single sellable item - with ~20 items and 12 retries, that was up to hundreds
+-- of full UI walks per merchant visit, freezing the client for seconds. These
+-- collect the raw candidate lists ONCE per highlight pass; FindButtonForBagSlot
+-- then just filters/scores the (small) precomputed lists per bag/slot instead of
+-- re-walking the whole UI each time.
+local function CollectGlobalEnumCandidates()
+    local list = {}
+    local frame = EnumerateFrames()
+    while frame do
+        if frame.GetObjectType then
+            local okType, objType = pcall(frame.GetObjectType, frame)
+            if okType and (objType == "Button" or objType == "CheckButton" or objType == "ItemButton") then
+                list[#list + 1] = frame
+            end
+        end
+        frame = EnumerateFrames(frame)
+    end
+    return list
+end
+
+local function CollectLegacyNameCandidates()
+    local list = {}
+    for name, obj in pairs(_G) do
+        if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
+            if name:find("ContainerFrame") and name:find("Item") then
+                list[#list + 1] = obj
+            end
+        end
+    end
+    return list
+end
+
+local function FindButtonForBagSlot(bag, slot, globalEnumList, legacyNameList)
     local candidates = {}
     local seen = {}
     local isElvUILoaded = IsAddonLoadedSafe("ElvUI")
@@ -1471,25 +1505,37 @@ local function FindButtonForBagSlot(bag, slot)
         end
     end
 
-    -- Addon-agnostic frame enumeration. Walking every frame in the UI means we
-    -- inevitably touch buttons owned by other addons (buff icons, etc.) - AddCandidate
-    -- above already isolates each one, GetObjectType itself gets the same treatment here.
-    local frame = EnumerateFrames()
-    while frame do
-        if frame.GetObjectType then
-            local okType, objType = pcall(frame.GetObjectType, frame)
-            if okType and (objType == "Button" or objType == "CheckButton" or objType == "ItemButton") then
-                AddCandidate(frame, "global-enum")
-            end
+    -- Addon-agnostic frame enumeration. Use the precomputed list when the caller
+    -- supplied one (the normal path - built once per highlight pass, not per item);
+    -- only fall back to a live whole-UI walk if called without one.
+    if globalEnumList then
+        for _, frame in ipairs(globalEnumList) do
+            AddCandidate(frame, "global-enum")
         end
-        frame = EnumerateFrames(frame)
+    else
+        local frame = EnumerateFrames()
+        while frame do
+            if frame.GetObjectType then
+                local okType, objType = pcall(frame.GetObjectType, frame)
+                if okType and (objType == "Button" or objType == "CheckButton" or objType == "ItemButton") then
+                    AddCandidate(frame, "global-enum")
+                end
+            end
+            frame = EnumerateFrames(frame)
+        end
     end
 
-    -- Legacy name scan fallback.
-    for name, obj in pairs(_G) do
-        if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
-            if name:find("ContainerFrame") and name:find("Item") then
-                AddCandidate(obj, "legacy-name")
+    -- Legacy name scan fallback. Same caching approach as the frame walk above.
+    if legacyNameList then
+        for _, obj in ipairs(legacyNameList) do
+            AddCandidate(obj, "legacy-name")
+        end
+    else
+        for name, obj in pairs(_G) do
+            if type(name) == "string" and type(obj) == "table" and obj.GetID and obj.IsShown then
+                if name:find("ContainerFrame") and name:find("Item") then
+                    AddCandidate(obj, "legacy-name")
+                end
             end
         end
     end
@@ -1625,15 +1671,23 @@ UpdateBagHighlightsBody = function()
         end
     end
 
+    -- Built at most once per pass, only if some item actually needs the expensive
+    -- whole-UI walk - avoids redoing it per item (was up to ~20x per pass before).
+    local globalEnumList, legacyNameList
+
     for bag = 0, NUM_BAG_SLOTS do
         local numSlots = C_Container.GetContainerNumSlots(bag)
         for slot = 1, numSlots do
             local shouldSell = ShouldSellItem(bag, slot)
             if shouldSell then
+                if not globalEnumList then
+                    globalEnumList = CollectGlobalEnumCandidates()
+                    legacyNameList = CollectLegacyNameCandidates()
+                end
                 -- FindButtonForBagSlot walks every frame in the UI (including other
                 -- addons' buttons); an unrelated hook on one of them can throw here too,
                 -- so isolate it the same way ApplyHighlight is isolated below.
-                local findOk, button = pcall(FindButtonForBagSlot, bag, slot)
+                local findOk, button = pcall(FindButtonForBagSlot, bag, slot, globalEnumList, legacyNameList)
                 if not findOk then
                     if LegacyVendorDB and LegacyVendorDB.debug then
                         DebugPrint("FindButtonForBagSlot error:", "bag=", bag, "slot=", slot, tostring(button))
