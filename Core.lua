@@ -271,10 +271,22 @@ local itemsToSell = {}
 local totalGoldEarned = 0
 local itemsSoldCount = 0
 
--- Debug print function
+-- Debug log buffer, so the raw text can be exported via /lv exportlog instead of screenshots
+local debugLogBuffer = {}
+local MAX_DEBUG_LOG_LINES = 1000
+
+-- Debug print function: buffers into the exportable log window (/lv exportlog)
+-- instead of spamming the chat frame.
 local function DebugPrint(...)
     if LegacyVendorDB and LegacyVendorDB.debug then
-        print("|cFF00FF00[LegacyVendor Debug]|r", ...)
+        local parts = {}
+        for i = 1, select("#", ...) do
+            parts[i] = tostring((select(i, ...)))
+        end
+        table.insert(debugLogBuffer, table.concat(parts, " "))
+        if #debugLogBuffer > MAX_DEBUG_LOG_LINES then
+            table.remove(debugLogBuffer, 1)
+        end
     end
 end
 
@@ -285,6 +297,73 @@ end
 
 addon.Print = Print
 addon.DebugPrint = DebugPrint
+
+local exportLogFrame
+
+local function ShowExportLog()
+    local text = table.concat(debugLogBuffer, "\n")
+    if text == "" then
+        Print("Debug log is empty. Enable Debug Mode (/lv debug) and reproduce the issue first.")
+        return
+    end
+
+    if not exportLogFrame then
+        local f = CreateFrame("Frame", "LegacyVendorExportFrame", UIParent, "BasicFrameTemplateWithInset")
+        f:SetSize(640, 480)
+        f:SetPoint("CENTER")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", f.StartMoving)
+        f:SetScript("OnDragStop", f.StopMovingOrSizing)
+        f:SetFrameStrata("DIALOG")
+        f:SetToplevel(true)
+
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        f.title:SetPoint("TOP", f.TitleBg or f, "TOP", 0, -5)
+        f.title:SetText("LegacyVendor Debug Log - Ctrl+A then Ctrl+C to copy")
+
+        local scrollFrame = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 12, -30)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
+
+        local editBox = CreateFrame("EditBox", nil, scrollFrame)
+        editBox:SetMultiLine(true)
+        editBox:SetFontObject(ChatFontNormal)
+        editBox:SetWidth(576)
+        editBox:SetAutoFocus(false)
+        editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        editBox:SetScript("OnTextChanged", function(self, userInput)
+            if userInput then
+                self:SetText(f._lastText or "")
+                self:HighlightText()
+            end
+        end)
+        scrollFrame:SetScrollChild(editBox)
+        f.editBox = editBox
+
+        local clearBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        clearBtn:SetSize(100, 22)
+        clearBtn:SetPoint("BOTTOMLEFT", 14, 10)
+        clearBtn:SetText("Clear Log")
+        clearBtn:SetScript("OnClick", function()
+            wipe(debugLogBuffer)
+            f:Hide()
+            Print("Debug log cleared.")
+        end)
+        f.clearBtn = clearBtn
+
+        exportLogFrame = f
+    end
+
+    exportLogFrame._lastText = text
+    exportLogFrame.editBox:SetText(text)
+    exportLogFrame.editBox:HighlightText()
+    exportLogFrame.editBox:SetFocus()
+    exportLogFrame:Show()
+end
+
+addon.ShowExportLog = ShowExportLog
 
 local function EnsureExpansionProfiles(db)
     if not db.expansionProfiles then
@@ -1882,6 +1961,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv highlight - Toggle bag highlighting")
         Print("  /lv reset - Reset settings to default")
         Print("  /lv debug - Toggle debug mode")
+        Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
         
@@ -1951,7 +2031,10 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
-        Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+        Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "exportlog" or msg == "log" then
+        if addon.ShowExportLog then addon.ShowExportLog() end
 
     elseif msg == "strict" then
         LegacyVendorDB.strictSeasonalProtection = not (LegacyVendorDB.strictSeasonalProtection ~= false)
