@@ -1572,6 +1572,48 @@ local function CollectButtonsFromBagFrame(frame, outButtons, seenButtons)
     return count
 end
 
+-- Bounded recursive walk of ONE known frame's own descendant tree (its bag window,
+-- typically dozens to a few hundred frames) - NOT the whole UI. Used for bag-replacement
+-- addons (like EllesmereUIBags) that build plain CreateFrame("ItemButton", ...) widgets
+-- without exposing a `.Bags` lookup table the way ElvUI does.
+local function CollectFrameTreeButtons(rootFrame, outButtons, seenButtons, maxDepth)
+    if not rootFrame then
+        return 0
+    end
+
+    local count = 0
+    local visited = {}
+
+    local function Visit(frame, depth)
+        if not frame or visited[frame] or depth > maxDepth then
+            return
+        end
+        visited[frame] = true
+
+        if frame.GetObjectType and not seenButtons[frame] then
+            local okType, objType = pcall(frame.GetObjectType, frame)
+            if okType and (objType == "Button" or objType == "CheckButton" or objType == "ItemButton") then
+                seenButtons[frame] = true
+                outButtons[#outButtons + 1] = frame
+                count = count + 1
+            end
+        end
+
+        local numChildren = frame.GetNumChildren and frame:GetNumChildren() or 0
+        if numChildren > 0 and frame.GetChildren then
+            local okChildren, children = pcall(function() return { frame:GetChildren() } end)
+            if okChildren then
+                for _, child in ipairs(children) do
+                    Visit(child, depth + 1)
+                end
+            end
+        end
+    end
+
+    Visit(rootFrame, 0)
+    return count
+end
+
 local function CollectCustomBagButtons()
     local buttons = {}
     local seen = {}
@@ -1587,6 +1629,15 @@ local function CollectCustomBagButtons()
             if scanned > 0 then
                 source = "elvui"
             end
+        end
+    end
+
+    -- EllesmereUI's bag replacement window: a single known root frame (EUI_Bags), walked
+    -- directly instead of via the (much more expensive) whole-UI fallback.
+    if scanned == 0 and IsAddonLoadedSafe("EllesmereUIBags") and _G.EUI_Bags then
+        scanned = scanned + CollectFrameTreeButtons(_G.EUI_Bags, buttons, seen, 12)
+        if scanned > 0 then
+            source = "ellesmere"
         end
     end
 
@@ -1666,9 +1717,10 @@ UpdateBagHighlightsBody = function()
             DebugPrint("Custom bag path:", customSource, "scanned=", customScanned, "applied=", customApplied, "ElvUILoaded=", tostring(IsAddonLoadedSafe("ElvUI")), "WindToolsLoaded=", tostring(IsAddonLoadedSafe("ElvUI_WindTools")))
         end
 
-        if customApplied > 0 then
-            return
-        end
+        -- We found the addon's own bag button pool (a cheap, scoped scan) - trust it
+        -- completely and never fall through to the expensive whole-UI scan below, even
+        -- if nothing happened to be sellable this particular pass.
+        return
     end
 
     -- Built at most once per pass, only if some item actually needs the expensive
