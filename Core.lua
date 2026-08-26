@@ -665,20 +665,20 @@ local function ShouldSellItem(bag, slot)
     end
     
     -- No sell price = can't sell
-    if not sellPrice or sellPrice == 0 then 
-        DebugPrint("No sell price:", itemLink)
-        return false 
+    if not sellPrice or sellPrice == 0 then
+        DebugPrint("No sell price:", itemLink, "bag=", bag, "slot=", slot)
+        return false
     end
-    
+
     -- Special handling for gray items - bypass most filters if sellGray is enabled
     if db.sellGray and quality == 0 then
         DebugPrint("Selling gray item:", itemLink)
         return true, itemLink, itemCount, sellPrice * itemCount
     end
-    
+
     -- === FILTER 1: EXPANSION ===
     if not db.expansions[filterExpansionID] then
-        DebugPrint("Expansion disabled:", filterExpansionID, itemLink)
+        DebugPrint("Expansion disabled:", filterExpansionID, itemLink, "bag=", bag, "slot=", slot)
         return false
     end
 
@@ -829,6 +829,9 @@ local function ScanBags()
         for slot = 1, numSlots do
             local shouldSell, itemLink, count, price = ShouldSellItem(bag, slot)
             if shouldSell then
+                if LegacyVendorDB and LegacyVendorDB.debug then
+                    DebugPrint("ScanBags found:", itemLink, "bag=", bag, "slot=", slot)
+                end
                 table.insert(itemsToSell, {
                     bag = bag,
                     slot = slot,
