@@ -219,6 +219,7 @@ local defaults = {
     filterBySource = false, -- Whether to apply source filtering at all
     highlightItems = true, -- Highlight sellable items in bags
     highlightColor = { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }, -- Light purple glow by default
+    highlightStyle = "pulse", -- Visual style id, see addon.HIGHLIGHT_STYLES
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -942,6 +943,7 @@ local activeBagHighlights = {}
 local highlightUpdatePending = false
 local highlightRetryCount = 0
 local highlightRetryToken = 0
+local ClearHighlightVisualParts -- assigned near the highlight style implementations below
 
 local function StartHighlightRetries()
     highlightRetryToken = highlightRetryToken + 1
@@ -982,13 +984,9 @@ local function ClearBagHighlights()
         if hl and hl.driver then
             hl.driver:SetScript("OnUpdate", nil)
         end
-        if hl and hl.glow then
-            hl.glow:Hide()
+        if hl then
+            ClearHighlightVisualParts(hl)
         end
-        if hl and hl.edgeTop then hl.edgeTop:Hide() end
-        if hl and hl.edgeBottom then hl.edgeBottom:Hide() end
-        if hl and hl.edgeLeft then hl.edgeLeft:Hide() end
-        if hl and hl.edgeRight then hl.edgeRight:Hide() end
         if hl and hl.border and hl.border.SetVertexColor then
             if hl.borderOrigColor then
                 hl.border:SetVertexColor(hl.borderOrigColor.r, hl.borderOrigColor.g, hl.borderOrigColor.b, hl.borderOrigColor.a)
@@ -1092,21 +1090,377 @@ local function GetButtonBagAndSlot(button)
     return tonumber(bag), tonumber(slot)
 end
 
--- Smooth breathing pulse (no movement, just alpha) driving the glow border/wash.
--- phase is in [0,1); a full sine cycle per phase wrap.
-local function UpdateGlowPulse(hl, phase)
-    local t = (math.sin(phase * math.pi * 2) + 1) * 0.5 -- 0..1, smooth ease in/out
+-- ==========================================
+-- HIGHLIGHT VISUAL STYLES
+-- ==========================================
+-- Each style builds a small set of Texture objects on a host frame (created once per
+-- highlighted button, or once per config-panel preview swatch) and updates them on a
+-- breathing/animated cycle. Adding a style: give it an id/name in HIGHLIGHT_STYLES,
+-- then a build/color/update triple in HighlightStyleImpl keyed by that id.
+addon.HIGHLIGHT_STYLES = {
+    { id = "pulse",      name = "Pulsing Glow" },
+    { id = "ants",       name = "Marching Ants (Classic)" },
+    { id = "solid",      name = "Solid Border" },
+    { id = "flash",      name = "Flash Pulse" },
+    { id = "wash",       name = "Full Icon Wash" },
+    { id = "corners",    name = "Soft Corners" },
+    { id = "brackets",   name = "Corner Brackets" },
+    { id = "doublering", name = "Double Ring" },
+    { id = "spin",       name = "Spinning Accent" },
+    { id = "dashed",     name = "Dashed Border" },
+}
 
-    local edgeAlpha = 0.55 + (0.45 * t)
-    if hl.edgeTop then hl.edgeTop:SetAlpha(edgeAlpha) end
-    if hl.edgeBottom then hl.edgeBottom:SetAlpha(edgeAlpha) end
-    if hl.edgeLeft then hl.edgeLeft:SetAlpha(edgeAlpha) end
-    if hl.edgeRight then hl.edgeRight:SetAlpha(edgeAlpha) end
+local DEFAULT_HIGHLIGHT_STYLE = "pulse"
+addon.DEFAULT_HIGHLIGHT_STYLE = DEFAULT_HIGHLIGHT_STYLE
 
-    if hl.glow then
-        hl.glow:SetAlpha(0.12 + (0.18 * t))
+local function MakeBar(host, isHoriz, thickness)
+    local tex = host:CreateTexture(nil, "OVERLAY")
+    tex:SetTexture("Interface\\Buttons\\WHITE8X8")
+    tex:SetBlendMode("ADD")
+    if isHoriz then
+        tex:SetHeight(thickness)
+    else
+        tex:SetWidth(thickness)
+    end
+    return tex
+end
+
+local function AnchorEdge(tex, host, edge, inset)
+    inset = inset or 0
+    if edge == "top" then
+        tex:SetPoint("TOPLEFT", host, "TOPLEFT", -inset, inset)
+        tex:SetPoint("TOPRIGHT", host, "TOPRIGHT", inset, inset)
+    elseif edge == "bottom" then
+        tex:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -inset, -inset)
+        tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", inset, -inset)
+    elseif edge == "left" then
+        tex:SetPoint("TOPLEFT", host, "TOPLEFT", -inset, inset)
+        tex:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -inset, -inset)
+    else -- "right"
+        tex:SetPoint("TOPRIGHT", host, "TOPRIGHT", inset, inset)
+        tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", inset, -inset)
     end
 end
+
+local function MakeWash(host, inset)
+    local tex = host:CreateTexture(nil, "BACKGROUND")
+    tex:SetPoint("TOPLEFT", host, "TOPLEFT", -(inset or 0), (inset or 0))
+    tex:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", (inset or 0), -(inset or 0))
+    tex:SetTexture("Interface\\Buttons\\WHITE8X8")
+    tex:SetBlendMode("ADD")
+    return tex
+end
+
+local function MakeDots(host, count, size)
+    local dots = {}
+    for i = 1, count do
+        local d = host:CreateTexture(nil, "OVERLAY")
+        d:SetSize(size, size)
+        d:SetTexture("Interface\\Buttons\\WHITE8X8")
+        d:SetBlendMode("ADD")
+        dots[i] = d
+    end
+    return dots
+end
+
+-- Places `tex` at fraction t (0..1, wraps) around host's rectangular perimeter.
+-- Returns the edge it landed on, for callers that want to orient the texture to match.
+local function PlaceOnPerimeter(host, tex, t)
+    local w = (host.GetWidth and host:GetWidth()) or 36
+    local h = (host.GetHeight and host:GetHeight()) or 36
+    local halfW, halfH = w * 0.5, h * 0.5
+    local perimeter = (2 * w) + (2 * h)
+    t = t - math.floor(t)
+    local d = t * perimeter
+    local x, y, edge
+
+    if d < w then
+        x, y, edge = -halfW + d, halfH, "top"
+    elseif d < (w + h) then
+        x, y, edge = halfW, halfH - (d - w), "right"
+    elseif d < (2 * w + h) then
+        x, y, edge = halfW - (d - (w + h)), -halfH, "bottom"
+    else
+        x, y, edge = -halfW, -halfH + (d - (2 * w + h)), "left"
+    end
+
+    tex:ClearAllPoints()
+    tex:SetPoint("CENTER", host, "CENTER", x, y)
+    return edge
+end
+
+local function ShowAll(list)
+    for _, tex in ipairs(list) do
+        tex:Show()
+    end
+end
+
+local function ColorAll(list, r, g, b)
+    for _, tex in ipairs(list) do
+        tex:SetVertexColor(r, g, b, 1)
+    end
+end
+
+local HighlightStyleImpl = {}
+addon.HighlightStyleImpl = HighlightStyleImpl
+
+HighlightStyleImpl.pulse = {
+    animated = true,
+    speed = 0.5, -- ~2 second breathing cycle
+    build = function(hl, host)
+        hl.wash = MakeWash(host, 3)
+        hl.edgeTop = MakeBar(host, true, 2); AnchorEdge(hl.edgeTop, host, "top")
+        hl.edgeBottom = MakeBar(host, true, 2); AnchorEdge(hl.edgeBottom, host, "bottom")
+        hl.edgeLeft = MakeBar(host, false, 2); AnchorEdge(hl.edgeLeft, host, "left")
+        hl.edgeRight = MakeBar(host, false, 2); AnchorEdge(hl.edgeRight, host, "right")
+    end,
+    color = function(hl, r, g, b)
+        ColorAll({ hl.wash, hl.edgeTop, hl.edgeBottom, hl.edgeLeft, hl.edgeRight }, r, g, b)
+        ShowAll({ hl.wash, hl.edgeTop, hl.edgeBottom, hl.edgeLeft, hl.edgeRight })
+    end,
+    update = function(hl, host, phase)
+        local t = (math.sin(phase * math.pi * 2) + 1) * 0.5
+        local edgeAlpha = 0.55 + (0.45 * t)
+        hl.edgeTop:SetAlpha(edgeAlpha)
+        hl.edgeBottom:SetAlpha(edgeAlpha)
+        hl.edgeLeft:SetAlpha(edgeAlpha)
+        hl.edgeRight:SetAlpha(edgeAlpha)
+        hl.wash:SetAlpha(0.12 + (0.18 * t))
+    end,
+}
+
+HighlightStyleImpl.solid = {
+    animated = false,
+    build = function(hl, host)
+        hl.edgeTop = MakeBar(host, true, 2); AnchorEdge(hl.edgeTop, host, "top")
+        hl.edgeBottom = MakeBar(host, true, 2); AnchorEdge(hl.edgeBottom, host, "bottom")
+        hl.edgeLeft = MakeBar(host, false, 2); AnchorEdge(hl.edgeLeft, host, "left")
+        hl.edgeRight = MakeBar(host, false, 2); AnchorEdge(hl.edgeRight, host, "right")
+    end,
+    color = function(hl, r, g, b)
+        ColorAll({ hl.edgeTop, hl.edgeBottom, hl.edgeLeft, hl.edgeRight }, r, g, b)
+        ShowAll({ hl.edgeTop, hl.edgeBottom, hl.edgeLeft, hl.edgeRight })
+    end,
+    update = function(hl, host, phase)
+        hl.edgeTop:SetAlpha(0.95)
+        hl.edgeBottom:SetAlpha(0.95)
+        hl.edgeLeft:SetAlpha(0.95)
+        hl.edgeRight:SetAlpha(0.95)
+    end,
+}
+
+HighlightStyleImpl.flash = {
+    animated = true,
+    speed = 1.2,
+    build = function(hl, host)
+        hl.wash = MakeWash(host, 3)
+        hl.edgeTop = MakeBar(host, true, 2); AnchorEdge(hl.edgeTop, host, "top")
+        hl.edgeBottom = MakeBar(host, true, 2); AnchorEdge(hl.edgeBottom, host, "bottom")
+        hl.edgeLeft = MakeBar(host, false, 2); AnchorEdge(hl.edgeLeft, host, "left")
+        hl.edgeRight = MakeBar(host, false, 2); AnchorEdge(hl.edgeRight, host, "right")
+    end,
+    color = HighlightStyleImpl.pulse.color,
+    update = function(hl, host, phase)
+        local t = (phase % 1) < 0.5 and 1 or 0.2
+        hl.edgeTop:SetAlpha(t)
+        hl.edgeBottom:SetAlpha(t)
+        hl.edgeLeft:SetAlpha(t)
+        hl.edgeRight:SetAlpha(t)
+        hl.wash:SetAlpha(t * 0.25)
+    end,
+}
+
+HighlightStyleImpl.wash = {
+    animated = true,
+    speed = 0.5,
+    build = function(hl, host)
+        hl.wash = MakeWash(host, 0)
+    end,
+    color = function(hl, r, g, b)
+        hl.wash:SetVertexColor(r, g, b, 1)
+        hl.wash:Show()
+    end,
+    update = function(hl, host, phase)
+        local t = (math.sin(phase * math.pi * 2) + 1) * 0.5
+        hl.wash:SetAlpha(0.15 + (0.25 * t))
+    end,
+}
+
+HighlightStyleImpl.corners = {
+    animated = true,
+    speed = 0.5,
+    build = function(hl, host)
+        hl.corners = {}
+        local points = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+        for i, p in ipairs(points) do
+            local tex = host:CreateTexture(nil, "OVERLAY")
+            tex:SetSize(9, 9)
+            tex:SetTexture("Interface\\Buttons\\WHITE8X8")
+            tex:SetBlendMode("ADD")
+            tex:SetPoint("CENTER", host, p, 0, 0)
+            hl.corners[i] = tex
+        end
+    end,
+    color = function(hl, r, g, b)
+        ColorAll(hl.corners, r, g, b)
+        ShowAll(hl.corners)
+    end,
+    update = function(hl, host, phase)
+        local t = (math.sin(phase * math.pi * 2) + 1) * 0.5
+        local a = 0.4 + (0.6 * t)
+        for _, tex in ipairs(hl.corners) do
+            tex:SetAlpha(a)
+        end
+    end,
+}
+
+HighlightStyleImpl.brackets = {
+    animated = true,
+    speed = 0.5,
+    build = function(hl, host)
+        hl.corners = {}
+        local legLen, thickness = 9, 2
+        local points = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+        for _, p in ipairs(points) do
+            local hBar = MakeBar(host, true, thickness)
+            hBar:SetWidth(legLen)
+            hBar:SetPoint(p, host, p, 0, 0)
+
+            local vBar = MakeBar(host, false, thickness)
+            vBar:SetHeight(legLen)
+            vBar:SetPoint(p, host, p, 0, 0)
+
+            hl.corners[#hl.corners + 1] = hBar
+            hl.corners[#hl.corners + 1] = vBar
+        end
+    end,
+    color = function(hl, r, g, b)
+        ColorAll(hl.corners, r, g, b)
+        ShowAll(hl.corners)
+    end,
+    update = function(hl, host, phase)
+        local t = (math.sin(phase * math.pi * 2) + 1) * 0.5
+        local a = 0.5 + (0.5 * t)
+        for _, tex in ipairs(hl.corners) do
+            tex:SetAlpha(a)
+        end
+    end,
+}
+
+HighlightStyleImpl.doublering = {
+    animated = true,
+    speed = 0.5,
+    build = function(hl, host)
+        hl.edgeTop = MakeBar(host, true, 2); AnchorEdge(hl.edgeTop, host, "top", 0)
+        hl.edgeBottom = MakeBar(host, true, 2); AnchorEdge(hl.edgeBottom, host, "bottom", 0)
+        hl.edgeLeft = MakeBar(host, false, 2); AnchorEdge(hl.edgeLeft, host, "left", 0)
+        hl.edgeRight = MakeBar(host, false, 2); AnchorEdge(hl.edgeRight, host, "right", 0)
+
+        hl.outerTop = MakeBar(host, true, 1); AnchorEdge(hl.outerTop, host, "top", 4)
+        hl.outerBottom = MakeBar(host, true, 1); AnchorEdge(hl.outerBottom, host, "bottom", 4)
+        hl.outerLeft = MakeBar(host, false, 1); AnchorEdge(hl.outerLeft, host, "left", 4)
+        hl.outerRight = MakeBar(host, false, 1); AnchorEdge(hl.outerRight, host, "right", 4)
+    end,
+    color = function(hl, r, g, b)
+        local all = { hl.edgeTop, hl.edgeBottom, hl.edgeLeft, hl.edgeRight,
+                       hl.outerTop, hl.outerBottom, hl.outerLeft, hl.outerRight }
+        ColorAll(all, r, g, b)
+        ShowAll(all)
+    end,
+    update = function(hl, host, phase)
+        local t = (math.sin(phase * math.pi * 2) + 1) * 0.5
+        local innerA = 0.6 + (0.4 * t)
+        local outerA = 0.15 + (0.3 * t)
+        hl.edgeTop:SetAlpha(innerA); hl.edgeBottom:SetAlpha(innerA)
+        hl.edgeLeft:SetAlpha(innerA); hl.edgeRight:SetAlpha(innerA)
+        hl.outerTop:SetAlpha(outerA); hl.outerBottom:SetAlpha(outerA)
+        hl.outerLeft:SetAlpha(outerA); hl.outerRight:SetAlpha(outerA)
+    end,
+}
+
+HighlightStyleImpl.ants = {
+    animated = true,
+    speed = 0.9,
+    build = function(hl, host)
+        hl.dots = MakeDots(host, 34, 3)
+    end,
+    color = function(hl, r, g, b)
+        ColorAll(hl.dots, r, g, b)
+        ShowAll(hl.dots)
+    end,
+    update = function(hl, host, phase)
+        local count = #hl.dots
+        for i, d in ipairs(hl.dots) do
+            PlaceOnPerimeter(host, d, ((i - 1) / count) + phase)
+        end
+    end,
+}
+
+HighlightStyleImpl.spin = {
+    animated = true,
+    speed = 1.4,
+    build = function(hl, host)
+        hl.dots = MakeDots(host, 5, 7)
+    end,
+    color = function(hl, r, g, b)
+        ColorAll(hl.dots, r, g, b)
+        ShowAll(hl.dots)
+    end,
+    update = function(hl, host, phase)
+        local count = #hl.dots
+        for i, d in ipairs(hl.dots) do
+            PlaceOnPerimeter(host, d, ((i - 1) / count) + phase)
+        end
+    end,
+}
+
+HighlightStyleImpl.dashed = {
+    animated = true,
+    speed = 0.35,
+    build = function(hl, host)
+        hl.dots = {}
+        for i = 1, 16 do
+            local d = host:CreateTexture(nil, "OVERLAY")
+            d:SetSize(7, 2)
+            d:SetTexture("Interface\\Buttons\\WHITE8X8")
+            d:SetBlendMode("ADD")
+            hl.dots[i] = d
+        end
+    end,
+    color = function(hl, r, g, b)
+        ColorAll(hl.dots, r, g, b)
+        ShowAll(hl.dots)
+    end,
+    update = function(hl, host, phase)
+        local count = #hl.dots
+        for i, d in ipairs(hl.dots) do
+            local edge = PlaceOnPerimeter(host, d, ((i - 1) / count) + phase)
+            if d.SetRotation then
+                d:SetRotation((edge == "left" or edge == "right") and (math.pi / 2) or 0)
+            end
+        end
+    end,
+}
+
+-- Hides every part any style might have created on `hl`, regardless of which style
+-- built it - used both to clear an active highlight and to tear down a stale style's
+-- parts before rebuilding for a newly selected one.
+ClearHighlightVisualParts = function(hl)
+    if not hl then
+        return
+    end
+    local function H(t) if t then t:Hide() end end
+    H(hl.wash)
+    H(hl.edgeTop); H(hl.edgeBottom); H(hl.edgeLeft); H(hl.edgeRight)
+    H(hl.outerTop); H(hl.outerBottom); H(hl.outerLeft); H(hl.outerRight)
+    if hl.dots then
+        for _, d in ipairs(hl.dots) do d:Hide() end
+    end
+    if hl.corners then
+        for _, c in ipairs(hl.corners) do c:Hide() end
+    end
+end
+addon.ClearHighlightVisualParts = ClearHighlightVisualParts
 
 local function IsLikelyItemButton(button)
     if not button then
@@ -1138,9 +1492,29 @@ local function ApplyHighlight(button)
         return
     end
 
+    local desiredStyle = (LegacyVendorDB and LegacyVendorDB.highlightStyle) or DEFAULT_HIGHLIGHT_STYLE
+    if not HighlightStyleImpl[desiredStyle] then
+        desiredStyle = DEFAULT_HIGHLIGHT_STYLE
+    end
+
     local hl = button.LegacyVendorHighlight
+    if hl and hl.style ~= desiredStyle then
+        -- The user switched styles since this button was last highlighted: the cached
+        -- part set belongs to the old style's shape, so tear it down and rebuild fresh
+        -- rather than trying to reuse mismatched pieces.
+        ClearHighlightVisualParts(hl)
+        if hl.driver then
+            hl.driver:SetScript("OnUpdate", nil)
+        end
+        if hl.host then
+            hl.host:Hide()
+        end
+        hl = nil
+        button.LegacyVendorHighlight = nil
+    end
+
     if not hl then
-        hl = {}
+        hl = { style = desiredStyle }
 
         -- Use a dedicated host frame above the item button so skin overlays (ElvUI/WindTools)
         -- do not hide our highlight textures.
@@ -1160,43 +1534,7 @@ local function ApplyHighlight(button)
             hl.host:SetIgnoreParentAlpha(true)
         end
 
-        -- Soft outer glow wash, sitting just outside the crisp border below.
-        hl.glow = hl.host:CreateTexture(nil, "BACKGROUND")
-        hl.glow:SetPoint("TOPLEFT", hl.host, "TOPLEFT", -3, 3)
-        hl.glow:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 3, -3)
-        hl.glow:SetTexture("Interface\\Buttons\\WHITE8X8")
-        hl.glow:SetBlendMode("ADD")
-
-        -- Crisp pulsing border, one thin bar per edge, flush with the icon.
-        local edgeThickness = 2
-
-        hl.edgeTop = hl.host:CreateTexture(nil, "OVERLAY")
-        hl.edgeTop:SetTexture("Interface\\Buttons\\WHITE8X8")
-        hl.edgeTop:SetBlendMode("ADD")
-        hl.edgeTop:SetHeight(edgeThickness)
-        hl.edgeTop:SetPoint("TOPLEFT", hl.host, "TOPLEFT", 0, 0)
-        hl.edgeTop:SetPoint("TOPRIGHT", hl.host, "TOPRIGHT", 0, 0)
-
-        hl.edgeBottom = hl.host:CreateTexture(nil, "OVERLAY")
-        hl.edgeBottom:SetTexture("Interface\\Buttons\\WHITE8X8")
-        hl.edgeBottom:SetBlendMode("ADD")
-        hl.edgeBottom:SetHeight(edgeThickness)
-        hl.edgeBottom:SetPoint("BOTTOMLEFT", hl.host, "BOTTOMLEFT", 0, 0)
-        hl.edgeBottom:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 0, 0)
-
-        hl.edgeLeft = hl.host:CreateTexture(nil, "OVERLAY")
-        hl.edgeLeft:SetTexture("Interface\\Buttons\\WHITE8X8")
-        hl.edgeLeft:SetBlendMode("ADD")
-        hl.edgeLeft:SetWidth(edgeThickness)
-        hl.edgeLeft:SetPoint("TOPLEFT", hl.host, "TOPLEFT", 0, 0)
-        hl.edgeLeft:SetPoint("BOTTOMLEFT", hl.host, "BOTTOMLEFT", 0, 0)
-
-        hl.edgeRight = hl.host:CreateTexture(nil, "OVERLAY")
-        hl.edgeRight:SetTexture("Interface\\Buttons\\WHITE8X8")
-        hl.edgeRight:SetBlendMode("ADD")
-        hl.edgeRight:SetWidth(edgeThickness)
-        hl.edgeRight:SetPoint("TOPRIGHT", hl.host, "TOPRIGHT", 0, 0)
-        hl.edgeRight:SetPoint("BOTTOMRIGHT", hl.host, "BOTTOMRIGHT", 0, 0)
+        HighlightStyleImpl[desiredStyle].build(hl, hl.host)
 
         hl.driver = CreateFrame("Frame", nil, hl.host)
         hl.phase = 0
@@ -1221,22 +1559,15 @@ local function ApplyHighlight(button)
         button.LegacyVendorHighlight = hl
     end
 
+    hl.host:Show()
+
     local color = (LegacyVendorDB and LegacyVendorDB.highlightColor) or { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }
     local r = color.r or 0.68
     local g = color.g or 0.45
     local b = color.b or 1.0
 
-    hl.glow:SetVertexColor(r, g, b, 1)
-    hl.glow:Show()
-
-    hl.edgeTop:SetVertexColor(r, g, b, 1)
-    hl.edgeBottom:SetVertexColor(r, g, b, 1)
-    hl.edgeLeft:SetVertexColor(r, g, b, 1)
-    hl.edgeRight:SetVertexColor(r, g, b, 1)
-    hl.edgeTop:Show()
-    hl.edgeBottom:Show()
-    hl.edgeLeft:Show()
-    hl.edgeRight:Show()
+    local impl = HighlightStyleImpl[hl.style]
+    impl.color(hl, r, g, b)
 
     if hl.border and hl.border.SetVertexColor then
         if hl.borderOrigColor then
@@ -1248,18 +1579,24 @@ local function ApplyHighlight(button)
         hl.icon:SetVertexColor(hl.iconOrigColor.r, hl.iconOrigColor.g, hl.iconOrigColor.b, hl.iconOrigColor.a)
     end
 
-    UpdateGlowPulse(hl, hl.phase or 0)
-    hl.driver:SetScript("OnUpdate", function(_, elapsed)
-        hl.accum = (hl.accum or 0) + elapsed
-        if hl.accum < 0.03 then
-            return
-        end
+    impl.update(hl, hl.host, hl.phase or 0)
 
-        local dt = hl.accum
-        hl.accum = 0
-        hl.phase = ((hl.phase or 0) + (dt * 0.5)) % 1 -- ~2 second breathing cycle
-        UpdateGlowPulse(hl, hl.phase)
-    end)
+    if impl.animated then
+        local speed = impl.speed or 0.5
+        hl.driver:SetScript("OnUpdate", function(_, elapsed)
+            hl.accum = (hl.accum or 0) + elapsed
+            if hl.accum < 0.03 then
+                return
+            end
+
+            local dt = hl.accum
+            hl.accum = 0
+            hl.phase = ((hl.phase or 0) + (dt * speed)) % 1
+            impl.update(hl, hl.host, hl.phase)
+        end)
+    else
+        hl.driver:SetScript("OnUpdate", nil)
+    end
 
     activeBagHighlights[button] = hl
 end

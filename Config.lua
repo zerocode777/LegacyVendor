@@ -433,12 +433,115 @@ local function CreateSimpleConfig()
         function() return LegacyVendorDB.sellGray end,
         function(v) LegacyVendorDB.sellGray = v end)
 
-    CreateCheckbox(content, "Highlight Sellable Items in Bags", "Show red glow on items that will be sold.",
+    CreateCheckbox(content, "Highlight Sellable Items in Bags", "Show a glowing marker on items that will be sold.",
         function() return LegacyVendorDB.highlightItems end,
         function(v)
             LegacyVendorDB.highlightItems = v
             if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
         end)
+
+    -- Highlight style picker + a live-animated preview swatch.
+    if addon.HIGHLIGHT_STYLES and addon.HighlightStyleImpl then
+        local pickerLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        pickerLabel:SetPoint("TOPLEFT", 30, yOffset)
+        pickerLabel:SetText("Highlight Style:")
+        yOffset = yOffset - 4
+
+        -- Preview swatch: a fake item icon with the same highlight visual applied,
+        -- always animating (while this panel is open) so the user can compare styles
+        -- before committing to one.
+        local previewFrame = CreateFrame("Frame", nil, content)
+        previewFrame:SetSize(36, 36)
+        previewFrame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -30, yOffset)
+
+        local previewBg = previewFrame:CreateTexture(nil, "BACKGROUND")
+        previewBg:SetAllPoints()
+        previewBg:SetColorTexture(0.08, 0.08, 0.08, 1)
+
+        local previewIcon = previewFrame:CreateTexture(nil, "ARTWORK")
+        previewIcon:SetPoint("TOPLEFT", 2, -2)
+        previewIcon:SetPoint("BOTTOMRIGHT", -2, 2)
+        previewIcon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+        previewFrame.Icon = previewIcon -- mimics an item button's .Icon field
+
+        local previewHl, previewDriver
+        previewDriver = CreateFrame("Frame", nil, previewFrame)
+
+        local function RebuildPreview()
+            if previewHl and previewHl.host then
+                previewHl.host:Hide()
+            end
+
+            local styleId = LegacyVendorDB.highlightStyle or addon.DEFAULT_HIGHLIGHT_STYLE
+            local impl = addon.HighlightStyleImpl[styleId] or addon.HighlightStyleImpl[addon.DEFAULT_HIGHLIGHT_STYLE]
+
+            local host = CreateFrame("Frame", nil, previewFrame)
+            host:SetPoint("TOPLEFT", previewIcon, "TOPLEFT", -2, 2)
+            host:SetPoint("BOTTOMRIGHT", previewIcon, "BOTTOMRIGHT", 2, -2)
+            host:SetFrameLevel(previewFrame:GetFrameLevel() + 5)
+
+            previewHl = { style = styleId, host = host, phase = 0, accum = 0 }
+            impl.build(previewHl, host)
+
+            local color = LegacyVendorDB.highlightColor or { r = 0.68, g = 0.45, b = 1.0 }
+            impl.color(previewHl, color.r or 0.68, color.g or 0.45, color.b or 1.0)
+            impl.update(previewHl, host, 0)
+        end
+
+        previewDriver:SetScript("OnUpdate", function(_, elapsed)
+            if not previewHl or not configFrame:IsShown() then
+                return
+            end
+            local impl = addon.HighlightStyleImpl[previewHl.style]
+            if not impl or not impl.animated then
+                return
+            end
+            previewHl.accum = (previewHl.accum or 0) + elapsed
+            if previewHl.accum < 0.03 then
+                return
+            end
+            local dt = previewHl.accum
+            previewHl.accum = 0
+            previewHl.phase = ((previewHl.phase or 0) + (dt * (impl.speed or 0.5))) % 1
+            impl.update(previewHl, previewHl.host, previewHl.phase)
+        end)
+
+        local function GetStyleName(id)
+            for _, s in ipairs(addon.HIGHLIGHT_STYLES) do
+                if s.id == id then return s.name end
+            end
+            return id
+        end
+
+        local dropdown = CreateFrame("Frame", "LegacyVendorHighlightStyleDropdown", content, "UIDropDownMenuTemplate")
+        dropdown:SetPoint("TOPLEFT", pickerLabel, "BOTTOMLEFT", -16, -2)
+        UIDropDownMenu_SetWidth(dropdown, 170)
+
+        UIDropDownMenu_Initialize(dropdown, function(self, level)
+            for _, style in ipairs(addon.HIGHLIGHT_STYLES) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = style.name
+                info.value = style.id
+                info.checked = (LegacyVendorDB.highlightStyle == style.id)
+                info.func = function()
+                    LegacyVendorDB.highlightStyle = style.id
+                    UIDropDownMenu_SetSelectedValue(dropdown, style.id)
+                    UIDropDownMenu_SetText(dropdown, style.name)
+                    RebuildPreview()
+                    if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end)
+
+        local currentStyleId = LegacyVendorDB.highlightStyle or addon.DEFAULT_HIGHLIGHT_STYLE
+        UIDropDownMenu_SetSelectedValue(dropdown, currentStyleId)
+        UIDropDownMenu_SetText(dropdown, GetStyleName(currentStyleId))
+
+        RebuildPreview()
+
+        yOffset = yOffset - 58
+    end
 
     CreateCheckbox(content, "Debug Mode", "Show debug messages in chat.",
         function() return LegacyVendorDB.debug end,

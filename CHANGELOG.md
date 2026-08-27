@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Bag highlight style picker in Settings, with 10 options: Pulsing Glow (default), Marching Ants
+  (Classic), Solid Border, Flash Pulse, Full Icon Wash, Soft Corners, Corner Brackets, Double
+  Ring, Spinning Accent, and Dashed Border. A live-animated preview swatch next to the dropdown
+  shows exactly what the selected style looks like before committing to it.
+
+## [Unreleased]
+
 ### Fixed
 - Declared `## Interface` versions in every .toc were stale, which could make the client flag
   LegacyVendor as out of date depending on client settings. Updated to match current live patches:
