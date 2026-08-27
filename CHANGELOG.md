@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Classic), Solid Border, Flash Pulse, Full Icon Wash, Soft Corners, Corner Brackets, Double
   Ring, Spinning Accent, and Dashed Border. A live-animated preview swatch next to the dropdown
   shows exactly what the selected style looks like before committing to it.
-
-## [Unreleased]
+- Highlight color picker next to the style dropdown - a clickable swatch opens the standard color
+  picker (works on both the modern retail API and the older Classic one) and updates the preview
+  and any currently-highlighted bag items live.
 
 ### Fixed
 - Declared `## Interface` versions in every .toc were stale, which could make the client flag

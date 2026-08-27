@@ -538,9 +538,101 @@ local function CreateSimpleConfig()
         UIDropDownMenu_SetSelectedValue(dropdown, currentStyleId)
         UIDropDownMenu_SetText(dropdown, GetStyleName(currentStyleId))
 
+        -- Color picker: a clickable swatch showing the current highlight color.
+        local colorLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        colorLabel:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 16, -12)
+        colorLabel:SetText("Highlight Color:")
+
+        local swatch = CreateFrame("Button", nil, content)
+        swatch:SetSize(20, 20)
+        swatch:SetPoint("LEFT", colorLabel, "RIGHT", 8, 0)
+
+        local swatchBorder = swatch:CreateTexture(nil, "BACKGROUND")
+        swatchBorder:SetPoint("TOPLEFT", -1, 1)
+        swatchBorder:SetPoint("BOTTOMRIGHT", 1, -1)
+        swatchBorder:SetColorTexture(0, 0, 0, 1)
+
+        local swatchTex = swatch:CreateTexture(nil, "ARTWORK")
+        swatchTex:SetAllPoints()
+
+        local function RefreshSwatch()
+            local c = LegacyVendorDB.highlightColor or { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }
+            swatchTex:SetColorTexture(c.r or 0.68, c.g or 0.45, c.b or 1.0, 1)
+        end
+
+        local function ApplyColorChange(r, g, b)
+            local prevA = (LegacyVendorDB.highlightColor and LegacyVendorDB.highlightColor.a) or 0.85
+            LegacyVendorDB.highlightColor = { r = r, g = g, b = b, a = prevA }
+            RefreshSwatch()
+            if previewHl then
+                local impl = addon.HighlightStyleImpl[previewHl.style]
+                if impl then impl.color(previewHl, r, g, b) end
+            end
+            if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+        end
+
+        local function OpenColorPicker()
+            -- Modern retail splits ColorPickerFrame into a lazy-loaded sub-addon; make
+            -- sure it's actually loaded before touching it (harmless no-op elsewhere).
+            if not ColorPickerFrame then
+                if C_AddOns and C_AddOns.LoadAddOn then
+                    pcall(C_AddOns.LoadAddOn, "Blizzard_ColorPickerFrame")
+                elseif LoadAddOn then
+                    pcall(LoadAddOn, "Blizzard_ColorPickerFrame")
+                end
+            end
+            if not ColorPickerFrame then
+                return
+            end
+
+            local c = LegacyVendorDB.highlightColor or { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }
+            if ColorPickerFrame.SetupColorPickerAndShow then
+                -- Modern retail API (Dragonflight+)
+                ColorPickerFrame:SetupColorPickerAndShow({
+                    r = c.r, g = c.g, b = c.b,
+                    hasOpacity = false,
+                    swatchFunc = function()
+                        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                        ApplyColorChange(nr, ng, nb)
+                    end,
+                    cancelFunc = function(previousValues)
+                        if previousValues then
+                            ApplyColorChange(previousValues.r, previousValues.g, previousValues.b)
+                        end
+                    end,
+                })
+            else
+                -- Classic / older retail API
+                ColorPickerFrame:SetColorRGB(c.r, c.g, c.b)
+                ColorPickerFrame.hasOpacity = false
+                ColorPickerFrame.previousValues = { r = c.r, g = c.g, b = c.b }
+                ColorPickerFrame.func = function()
+                    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+                    ApplyColorChange(nr, ng, nb)
+                end
+                ColorPickerFrame.cancelFunc = function(previousValues)
+                    ApplyColorChange(previousValues.r, previousValues.g, previousValues.b)
+                end
+                ColorPickerFrame:Show()
+            end
+        end
+
+        swatch:SetScript("OnClick", OpenColorPicker)
+        swatch:SetScript("OnEnter", function(self)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Highlight Color")
+            GameTooltip:AddLine("Click to choose a custom color for the bag highlight.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        swatch:SetScript("OnLeave", function()
+            if GameTooltip then GameTooltip:Hide() end
+        end)
+
+        RefreshSwatch()
         RebuildPreview()
 
-        yOffset = yOffset - 58
+        yOffset = yOffset - 80
     end
 
     CreateCheckbox(content, "Debug Mode", "Show debug messages in chat.",
