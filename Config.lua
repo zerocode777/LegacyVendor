@@ -466,18 +466,19 @@ local function CreateSimpleConfig()
     -- ==================================================
     -- GENERAL SETTINGS
     -- ==================================================
-    AddHeader("|cFFFFD100General Settings|r",
-        "Priority: Expansion -> Mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks.", "general")
+    AddHeader("|cFFFFD100How should it sell?|r",
+        "A few decisions that shape everything else.", "general")
     SetTooltipScope("global")
 
-    CreateCheckbox(content, "Enable LegacyVendor", "Enable or disable automatic selling.",
-        function() return LegacyVendorDB.enabled end,
-        function(v) LegacyVendorDB.enabled = v end, true)
-
-    CreateCheckbox(content, "Auto-Sell Mode",
-        "When OFF: click [Sell Legacy] button at vendors (recommended). When ON: auto-sell on vendor open.",
-        function() return LegacyVendorDB.autoSell end,
-        function(v) LegacyVendorDB.autoSell = v end)
+    -- Small labelled sub-heading, so a long options list reads as grouped
+    -- concerns (safety / behaviour / appearance) instead of one flat run.
+    local function AddSubLabel(text)
+        yOffset = yOffset - 4
+        local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPLEFT", 14, yOffset)
+        fs:SetText("|cFF8A8A8A" .. text .. "|r")
+        yOffset = yOffset - 18
+    end
 
     -- Step 1: Radio-style sell mode checkboxes (mutually exclusive)
     local function SetMode(m)
@@ -487,42 +488,67 @@ local function CreateSimpleConfig()
         RefreshConfigFrame()
     end
 
-    CreateCheckbox(content, "Sell EVERYTHING from enabled expansions",
-        "Ignore detailed filters; sell all legacy items from the expansions you tick below.",
-        function() return LegacyVendorDB.sellMode == "everything" end,
-        function() SetMode("everything") end)
+    AddSubLabel("SELLING MODE")
 
-    CreateCheckbox(content, "Only sell items MATCHING my filters",
-        "Use the rarity / source / slot / type / bind filters below.",
-        function() return LegacyVendorDB.sellMode == "matching" end,
-        function() SetMode("matching") end)
+    -- Mutually exclusive, so render as two chips rather than two checkboxes that
+    -- merely behave like radio buttons.
+    yOffset = addon.Sections.RenderChipGroup(content, yOffset, {
+        { key = "everything", label = "Everything from those expansions",
+          icon = "Interface\\ICONS\\INV_Misc_Coin_01",
+          tooltip = "Ignore the detailed filters entirely. Fastest, least selective." },
+        { key = "matching", label = "Only what matches my filters",
+          icon = "Interface\\ICONS\\INV_Misc_Spyglass_02",
+          tooltip = "Walk through the step-by-step filters below." },
+    },
+    function(key) return LegacyVendorDB.sellMode == key end,
+    function(key, v) if v then SetMode(key) end end,
+    nil, nil, nil)
 
-    -- Mode-aware hint: explains why the detailed filter sections are greyed in "everything" mode.
-    if LegacyVendorDB.sellMode ~= "matching" then
-        local modeHint = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        modeHint:SetPoint("TOPLEFT", 26, yOffset)
-        modeHint:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, yOffset)
-        modeHint:SetJustifyH("LEFT")
-        modeHint:SetText("|cFFFFCC00The Rarity / Source / Slot / Type filters below are OFF in this mode (that is why they are greyed). Pick \"Only sell items MATCHING my filters\" above to use them.|r")
-        yOffset = yOffset - 32
-    end
+    AddSubLabel("SAFETY")
 
-    CreateCheckbox(content, "Strict Seasonal M+ Protection  |cFF44FF44(recommended)|r",
-        "Hard-protect current-season scaled legacy dungeon items. Overrides all sell filters.",
+    CreateCheckbox(content, "Protect uncollected appearances, mounts, toys & pets  |cFF44FF44(recommended)|r",
+        "Never sell an item that would be your only source of an appearance, mount, toy or pet. "
+        .. "Selling one of those cannot be undone.",
+        function() return LegacyVendorDB.protectUncollected ~= false end,
+        function(v)
+            LegacyVendorDB.protectUncollected = v
+            if addon.ResetCollectibleCache then addon.ResetCollectibleCache() end
+            RefreshButton()
+        end, true)
+
+    CreateCheckbox(content, "Protect current-season Mythic+ gear  |cFF44FF44(recommended)|r",
+        "Hard-protect current-season scaled legacy dungeon items. Overrides every sell filter.",
         function() return LegacyVendorDB.strictSeasonalProtection ~= false end,
         function(v) LegacyVendorDB.strictSeasonalProtection = v end, true)
 
-    CreateCheckbox(content, "Show Sale Summary", "Display a summary message after selling.",
-        function() return LegacyVendorDB.showSummary end,
-        function(v) LegacyVendorDB.showSummary = v end)
-
-    CreateCheckbox(content, "Confirm Before Selling", "Show confirmation dialog before selling.",
+    CreateCheckbox(content, "Ask me before selling",
+        "Show a confirmation dialog listing what is about to be sold.",
         function() return LegacyVendorDB.confirmSell end,
         function(v) LegacyVendorDB.confirmSell = v end)
 
-    CreateCheckbox(content, "Also Sell Gray Items", "Sell all gray items automatically.",
+    AddSubLabel("BEHAVIOUR")
+
+    CreateCheckbox(content, "Sell automatically when I open a vendor",
+        "OFF (recommended): you click the [Sell Legacy] button. ON: it sells the moment a vendor opens.",
+        function() return LegacyVendorDB.autoSell end,
+        function(v) LegacyVendorDB.autoSell = v end)
+
+    CreateCheckbox(content, "Also sell grey (Poor) items",
+        "Sell grey junk regardless of expansion or filters.",
         function() return LegacyVendorDB.sellGray end,
-        function(v) LegacyVendorDB.sellGray = v end)
+        function(v)
+            LegacyVendorDB.sellGray = v
+            RefreshButton()
+        end)
+
+    CreateCheckbox(content, "Tell me what I sold",
+        "Print a summary in chat after selling.",
+        function() return LegacyVendorDB.showSummary end,
+        function(v) LegacyVendorDB.showSummary = v end)
+
+    AddSubLabel("APPEARANCE")
+
+
 
     CreateCheckbox(content, "Highlight Sellable Items in Bags", "Show a glowing marker on items that will be sold.",
         function() return LegacyVendorDB.highlightItems end,
@@ -726,9 +752,27 @@ local function CreateSimpleConfig()
         yOffset = yOffset - 80
     end
 
-    CreateCheckbox(content, "Debug Mode", "Show debug messages in chat.",
+    AddSubLabel("TROUBLESHOOTING")
+
+    CreateCheckbox(content, "Debug mode",
+        "Record the decision made for every bag slot. Nothing goes to chat - open the "
+        .. "log with the button below, or /lv exportlog.",
         function() return LegacyVendorDB.debug end,
         function(v) LegacyVendorDB.debug = v end)
+
+    MakeBtn(26, "Open debug log", function()
+        if addon.ShowExportLog then addon.ShowExportLog() end
+    end)
+    yOffset = yOffset - 30
+
+    CreateCheckbox(content, "Enable LegacyVendor",
+        "Master switch. When off, nothing is scanned, highlighted or sold.",
+        function() return LegacyVendorDB.enabled end,
+        function(v)
+            LegacyVendorDB.enabled = v
+            RefreshButton()
+            if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+        end, true)
 
     AddSep()
 
