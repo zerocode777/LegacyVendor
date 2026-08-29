@@ -220,6 +220,7 @@ local defaults = {
     highlightItems = true, -- Highlight sellable items in bags
     highlightColor = { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }, -- Light purple glow by default
     highlightStyle = "pulse", -- Visual style id, see addon.HIGHLIGHT_STYLES
+    protectUncollected = true, -- Never sell uncollected appearances/mounts/toys/pets
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -700,6 +701,100 @@ local function GetFilterExpansionID(itemID, itemLink, expansionID, baseItemLevel
     return expansionID
 end
 
+-- ==========================================
+-- UNCOLLECTED COLLECTIBLE PROTECTION
+-- ==========================================
+-- Legacy BoP gear is exactly the category where an item can be a character's only
+-- source of an appearance, and selling one is unrecoverable in a way a mis-sold
+-- stack of old food is not. Every check below is guarded for API availability so
+-- this degrades to "no protection claimed" on Classic rather than erroring.
+
+-- Cached per itemID: collection state only changes when the player learns something,
+-- and CollectibleCacheReset() below wipes it on exactly those events.
+local collectibleCache = {}
+
+local function ResetCollectibleCache()
+    wipe(collectibleCache)
+end
+addon.ResetCollectibleCache = ResetCollectibleCache
+
+local function IsUncollectedAppearance(itemLink)
+    if not itemLink then return false end
+    local C = C_TransmogCollection
+    if not (C and C.GetItemInfo) then return false end
+
+    local ok, _, sourceID = pcall(C.GetItemInfo, itemLink)
+    if not ok or not sourceID then return false end
+
+    -- Only claim protection for appearances THIS character could actually learn -
+    -- otherwise every legacy drop of another armour class reads as "uncollected"
+    -- and the addon quietly stops selling most of what the user wants cleared.
+    if C.PlayerCanCollectSource then
+        local canOk, canCollect = pcall(C.PlayerCanCollectSource, sourceID)
+        if not canOk or not canCollect then return false end
+    end
+
+    if C.PlayerHasTransmogItemModifiedAppearance then
+        local hasOk, hasIt = pcall(C.PlayerHasTransmogItemModifiedAppearance, sourceID)
+        if hasOk and hasIt == false then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function IsUncollectedToy(itemID)
+    if not (C_ToyBox and C_ToyBox.GetToyInfo and PlayerHasToy) then return false end
+    local ok, toyItemID = pcall(C_ToyBox.GetToyInfo, itemID)
+    if not ok or not toyItemID then return false end
+    local hasOk, hasIt = pcall(PlayerHasToy, itemID)
+    return hasOk and not hasIt
+end
+
+local function IsUncollectedMount(itemID)
+    local M = C_MountJournal
+    if not (M and M.GetMountFromItem and M.GetMountInfoByID) then return false end
+    local ok, mountID = pcall(M.GetMountFromItem, itemID)
+    if not ok or not mountID then return false end
+    local infoOk, _, _, _, _, _, _, _, _, _, _, isCollected = pcall(M.GetMountInfoByID, mountID)
+    return infoOk and isCollected == false
+end
+
+local function IsUncollectedPet(itemID)
+    local P = C_PetJournal
+    if not (P and P.GetPetInfoByItemID and P.GetNumCollectedInfo) then return false end
+    local ok, _, _, _, _, _, _, _, _, _, _, _, speciesID = pcall(P.GetPetInfoByItemID, itemID)
+    if not ok or not speciesID then return false end
+    local numOk, numCollected = pcall(P.GetNumCollectedInfo, speciesID)
+    return numOk and (numCollected == 0)
+end
+
+-- Returns reason string when the item is an uncollected collectible, else nil.
+local function GetCollectibleProtection(itemID, itemLink)
+    if not itemID then return nil end
+
+    local cached = collectibleCache[itemID]
+    if cached ~= nil then
+        return cached or nil
+    end
+
+    local reason = nil
+    if IsUncollectedAppearance(itemLink) then
+        reason = "uncollected appearance"
+    elseif IsUncollectedToy(itemID) then
+        reason = "uncollected toy"
+    elseif IsUncollectedMount(itemID) then
+        reason = "uncollected mount"
+    elseif IsUncollectedPet(itemID) then
+        reason = "uncollected pet"
+    end
+
+    collectibleCache[itemID] = reason or false
+    return reason
+end
+addon.GetCollectibleProtection = GetCollectibleProtection
+
 -- Check if item should be sold
 local function ShouldSellItem(bag, slot)
     local db = LegacyVendorDB
@@ -728,7 +823,18 @@ local function ShouldSellItem(bag, slot)
     
     -- Don't sell locked items
     if isLocked then return false end
-    
+
+    -- === HARD STOP: uncollected collectibles ===
+    -- Runs before every sell filter. Selling the only source of an appearance,
+    -- mount, toy or pet is unrecoverable, so this outranks all sell rules.
+    if db.protectUncollected ~= false then
+        local collectibleReason = GetCollectibleProtection(itemID, itemLink)
+        if collectibleReason then
+            DebugPrint("Protected (" .. collectibleReason .. "):", itemLink)
+            return false
+        end
+    end
+
     -- Get detailed item info
     local itemInfo
     if C_Item.GetItemInfo then
@@ -2410,6 +2516,14 @@ local function OnEvent(self, event, ...)
             addon.UpdateBagHighlights()
         end
 
+    elseif event == "TRANSMOG_COLLECTION_SOURCE_ADDED" or event == "TRANSMOG_COLLECTION_SOURCE_REMOVED"
+        or event == "NEW_TOY_ADDED" or event == "NEW_MOUNT_ADDED" or event == "NEW_PET_ADDED" then
+        ResetCollectibleCache()
+        if LegacyVendorDB and LegacyVendorDB.enabled and MerchantFrame and MerchantFrame:IsShown() then
+            addon.ScheduleMerchantButtonUpdate()
+            addon.ScheduleHighlightUpdate()
+        end
+
     elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" then
         local merchantShown = MerchantFrame and MerchantFrame:IsShown()
         if LegacyVendorDB and LegacyVendorDB.debug then
@@ -2521,6 +2635,13 @@ frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
 frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
+-- Collection state changed: drop the cached "is this uncollected" answers so a newly
+-- learned appearance/mount/toy/pet stops being protected straight away.
+frame:RegisterEvent("TRANSMOG_COLLECTION_SOURCE_ADDED")
+frame:RegisterEvent("TRANSMOG_COLLECTION_SOURCE_REMOVED")
+frame:RegisterEvent("NEW_TOY_ADDED")
+frame:RegisterEvent("NEW_MOUNT_ADDED")
+frame:RegisterEvent("NEW_PET_ADDED")
 
 -- Slash commands
 SLASH_LEGACYVENDOR1 = "/legacyvendor"
