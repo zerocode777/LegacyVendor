@@ -15,4 +15,5 @@ Core.lua
 ConfigWidgets.lua
 ConfigIcons.lua
 ConfigSections.lua
+ConfigWizard.lua
 Config.lua

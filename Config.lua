@@ -136,6 +136,15 @@ local function CreateSimpleConfig()
     presetLabel:SetPoint("LEFT", presetFrame, "LEFT", 4, 0)
     presetLabel:SetText("|cFF888888Start from:|r")
 
+    -- Guided setup: the "I do not want to read forty options" path.
+    local wizardBtn = CreateFrame("Button", nil, presetFrame, "UIPanelButtonTemplate")
+    wizardBtn:SetSize(120, 24)
+    wizardBtn:SetPoint("RIGHT", presetFrame, "RIGHT", -6, 0)
+    wizardBtn:SetText("Guided setup")
+    wizardBtn:SetScript("OnClick", function()
+        if addon.Wizard then addon.Wizard.Open() end
+    end)
+
     if addon.EnsureExpansionProfiles then
         addon.EnsureExpansionProfiles(LegacyVendorDB)
     end
@@ -730,7 +739,7 @@ local function CreateSimpleConfig()
         "Click an expansion to sell its items. This is the main filter - everything below narrows it further.", "expansions")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, RefreshLiveSummary)
+    yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, RefreshLiveSummary, nil, RefreshConfigFrame)
 
     AddSep()
 
@@ -741,7 +750,7 @@ local function CreateSimpleConfig()
         "An item must match one of these to sell.", "bind")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames)
+    yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 
@@ -753,7 +762,7 @@ local function CreateSimpleConfig()
         "Highlighted sources are skipped entirely. Leave all off to allow every source.", "sources")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames)
+    yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 
@@ -764,7 +773,7 @@ local function CreateSimpleConfig()
         "An item must match one of these to sell.", "rarity")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames)
+    yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 
@@ -775,7 +784,7 @@ local function CreateSimpleConfig()
         "Equippable items must match one of these slots.", "slots")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames)
+    yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 
@@ -786,7 +795,7 @@ local function CreateSimpleConfig()
         "Crafting mats and reagents are off by default - turn them on deliberately.", "types")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames)
+    yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 

@@ -20,11 +20,47 @@ local function ensureRefs()
     return W and V
 end
 
+-- Bulk All / None row. Clicking 22 gear slots one at a time is the single most
+-- tedious thing in the old panel; these make a whole group one click.
+local function AddBulkRow(content, yOffset, specs, set, onChange, rebuild)
+    if not ensureRefs() then return yOffset end
+
+    local row = CreateFrame("Frame", nil, content)
+    row:SetPoint("TOPLEFT", content, "TOPLEFT", CHIP_LEFT_INSET, yOffset)
+    row:SetSize(200, 20)
+
+    local function applyAll(value)
+        for _, spec in ipairs(specs) do set(spec.key, value) end
+        if onChange then onChange() end
+        if rebuild then rebuild() end
+    end
+
+    local all = W.CreatePresetButton(row, "All", "Turn every option in this group on.",
+        function() applyAll(true) end)
+    all:SetHeight(20)
+    all:SetPoint("LEFT", row, "LEFT", 0, 0)
+
+    local none = W.CreatePresetButton(row, "None", "Turn every option in this group off.",
+        function() applyAll(false) end)
+    none:SetHeight(20)
+    none:SetPoint("LEFT", all, "RIGHT", 5, 0)
+
+    return yOffset - 24, row
+end
+
 -- Generic chip group. specs is an array of:
 --   { key, label, icon, color, tooltip }
 -- get(key) -> bool, set(key, bool)
-function Sections.RenderChipGroup(content, yOffset, specs, get, set, onChange, registry)
+function Sections.RenderChipGroup(content, yOffset, specs, get, set, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
+
+    -- Groups big enough to be tedious get bulk controls; a three-chip row does not
+    -- need them and the buttons would just add noise.
+    if #specs >= 5 then
+        local newY, row = AddBulkRow(content, yOffset, specs, set, onChange, rebuild)
+        yOffset = newY
+        if registry and row then registry[#registry + 1] = row end
+    end
 
     local chips = {}
     for _, spec in ipairs(specs) do
@@ -43,7 +79,7 @@ function Sections.RenderChipGroup(content, yOffset, specs, get, set, onChange, r
 end
 
 -- Expansions: the primary filter, so it gets the widest, most prominent row.
-function Sections.RenderExpansions(content, yOffset, maxExpansion, onChange)
+function Sections.RenderExpansions(content, yOffset, maxExpansion, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
 
     local specs = {}
@@ -62,12 +98,12 @@ function Sections.RenderExpansions(content, yOffset, maxExpansion, onChange)
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB.expansions[key] end,
         function(key, v) LegacyVendorDB.expansions[key] = v end,
-        onChange)
+        onChange, registry, rebuild)
 end
 
 -- Rarity chips carry the actual quality colour, which is the game's own visual
 -- language for this exact concept.
-function Sections.RenderRarities(content, yOffset, onChange, registry)
+function Sections.RenderRarities(content, yOffset, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
 
     local specs = {}
@@ -86,10 +122,10 @@ function Sections.RenderRarities(content, yOffset, onChange, registry)
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB.rarities[key] end,
         function(key, v) LegacyVendorDB.rarities[key] = v end,
-        onChange, registry)
+        onChange, registry, rebuild)
 end
 
-function Sections.RenderBindTypes(content, yOffset, onChange, registry)
+function Sections.RenderBindTypes(content, yOffset, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
 
     -- Bind settings live on their own db keys rather than a table, so map explicitly.
@@ -107,12 +143,12 @@ function Sections.RenderBindTypes(content, yOffset, onChange, registry)
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB[field[key]] end,
         function(key, v) LegacyVendorDB[field[key]] = v end,
-        onChange, registry)
+        onChange, registry, rebuild)
 end
 
 -- Sources are a SKIP list: an active chip means "never sell this". Rendered with
 -- the same chip vocabulary but the label above makes the inversion explicit.
-function Sections.RenderSources(content, yOffset, onChange, registry)
+function Sections.RenderSources(content, yOffset, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
 
     local order = { "consumable", "dungeon", "raid", "outdoor", "profession",
@@ -134,11 +170,11 @@ function Sections.RenderSources(content, yOffset, onChange, registry)
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB.itemSources[key] == true end,
         function(key, v) LegacyVendorDB.itemSources[key] = v and true or nil end,
-        onChange, registry)
+        onChange, registry, rebuild)
 end
 
 -- Equipment slots use the character sheet's own empty-slot art.
-function Sections.RenderEquipSlots(content, yOffset, onChange, registry)
+function Sections.RenderEquipSlots(content, yOffset, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
 
     local order = {
@@ -166,10 +202,10 @@ function Sections.RenderEquipSlots(content, yOffset, onChange, registry)
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB.equipSlots[key] end,
         function(key, v) LegacyVendorDB.equipSlots[key] = v end,
-        onChange, registry)
+        onChange, registry, rebuild)
 end
 
-function Sections.RenderItemTypes(content, yOffset, onChange, registry)
+function Sections.RenderItemTypes(content, yOffset, onChange, registry, rebuild)
     if not ensureRefs() then return yOffset end
 
     local order = { 0, 1, 3, 5, 7, 9, 12, 13, 15 }
@@ -190,7 +226,7 @@ function Sections.RenderItemTypes(content, yOffset, onChange, registry)
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB.itemTypes[key] end,
         function(key, v) LegacyVendorDB.itemTypes[key] = v end,
-        onChange, registry)
+        onChange, registry, rebuild)
 end
 
 -- ==========================================

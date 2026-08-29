@@ -2665,6 +2665,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv highlight - Toggle bag highlighting")
         Print("  /lv reset - Reset settings to default")
         Print("  /lv debug - Toggle debug mode")
+        Print("  /lv setup - Guided setup: three questions instead of forty options")
         Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
@@ -2736,6 +2737,9 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "setup" or msg == "wizard" then
+        if addon.Wizard then addon.Wizard.Open() end
 
     elseif msg == "exportlog" or msg == "log" then
         if addon.ShowExportLog then addon.ShowExportLog() end
