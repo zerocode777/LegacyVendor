@@ -11,7 +11,7 @@ addon.Sections = Sections
 local W = nil -- addon.Widgets, resolved lazily (load order safe)
 local V = nil -- addon.Visuals
 
-local CHIP_AREA_WIDTH = 424
+local CHIP_AREA_WIDTH = 596
 local CHIP_LEFT_INSET = 12
 
 local function ensureRefs()

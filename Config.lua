@@ -67,7 +67,7 @@ end
 -- Alternative simple frame-based config for compatibility
 local function CreateSimpleConfig()
     local configFrame = CreateFrame("Frame", "LegacyVendorConfigFrame", UIParent, "BasicFrameTemplateWithInset")
-    configFrame:SetSize(480, 670)
+    configFrame:SetSize(660, 700)
     configFrame:SetPoint("CENTER")
     configFrame:SetMovable(true)
     configFrame:EnableMouse(true)
@@ -121,7 +121,7 @@ local function CreateSimpleConfig()
     scrollFrame:SetPoint("BOTTOMRIGHT", insetFrame, "BOTTOMRIGHT", -25, insetOffsetB + 26)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(430, 2000)
+    content:SetSize(610, 2600)
     scrollFrame:SetScrollChild(content)
 
     -- Active filter summary bar (bottom)
@@ -138,8 +138,8 @@ local function CreateSimpleConfig()
 
     -- Guided setup: the "I do not want to read forty options" path.
     local wizardBtn = CreateFrame("Button", nil, presetFrame, "UIPanelButtonTemplate")
-    wizardBtn:SetSize(120, 24)
-    wizardBtn:SetPoint("RIGHT", presetFrame, "RIGHT", -6, 0)
+    wizardBtn:SetSize(130, 24)
+    wizardBtn:SetPoint("RIGHT", presetFrame, "RIGHT", -10, 0)
     wizardBtn:SetText("Guided setup")
     wizardBtn:SetScript("OnClick", function()
         if addon.Wizard then addon.Wizard.Open() end
@@ -327,7 +327,7 @@ local function CreateSimpleConfig()
 
     local yOffset = -10
     local col2_col = 0
-    local COL2_LEFT, COL2_RIGHT = 10, 225
+    local COL2_LEFT, COL2_RIGHT = 10, 310
 
     -- Horizontal separator line
     local function AddSep()
@@ -744,29 +744,6 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- BIND TYPE FILTERS (global)
-    -- ==================================================
-    AddHeader("|cFFFFD100Which bind types?|r",
-        "An item must match one of these to sell.", "bind")
-    SetTooltipScope("global")
-
-    yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
-
-    AddSep()
-
-    -- ==================================================
-    -- SOURCE SKIP-LIST (global)
-    -- Step 4: tick = SKIP (never sell); no master toggle
-    -- ==================================================
-    AddHeader("|cFFFFD100Never sell from|r  |cFFFF9944(active = protected)|r",
-        "Highlighted sources are skipped entirely. Leave all off to allow every source.", "sources")
-    SetTooltipScope("global")
-
-    yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
-
-    AddSep()
-
-    -- ==================================================
     -- RARITY FILTERS (global)
     -- ==================================================
     AddHeader("|cFFFFD100Which rarities?|r",
@@ -774,6 +751,17 @@ local function CreateSimpleConfig()
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+
+    AddSep()
+
+    -- ==================================================
+    -- BIND TYPE FILTERS (global)
+    -- ==================================================
+    AddHeader("|cFFFFD100Which bind types?|r",
+        "An item must match one of these to sell.", "bind")
+    SetTooltipScope("global")
+
+    yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 
@@ -796,6 +784,19 @@ local function CreateSimpleConfig()
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+
+    AddSep()
+
+    -- ==================================================
+    -- SOURCE SKIP-LIST (global) - exclusions come last
+    -- The inclusive filters above decide what CAN sell; this subtracts from that
+    -- result, so it reads in the same order as the live sentence at the top.
+    -- ==================================================
+    AddHeader("|cFFFFD100...except never from|r  |cFFFF9944(active = protected)|r",
+        "Anything from a highlighted source is skipped, even if it matched everything above.", "sources")
+    SetTooltipScope("global")
+
+    yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
     AddSep()
 

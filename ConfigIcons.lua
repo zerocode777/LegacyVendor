@@ -99,12 +99,12 @@ addon.Visuals.ExpansionIcon = {
     [2]  = ICONS .. "INV_Misc_Frostemblem_01",             -- Wrath
     [3]  = ICONS .. "INV_Misc_Head_Dragon_Black",          -- Cataclysm
     [4]  = ICONS .. "Achievement_Character_Pandaren_Female", -- Mists
-    [5]  = ICONS .. "Achievement_Zone_Draenor",            -- Warlords
-    [6]  = ICONS .. "Achievement_Boss_Argus",              -- Legion
-    [7]  = ICONS .. "Achievement_Alliance_KulTiras",       -- BfA
-    [8]  = ICONS .. "Achievement_Zone_Shadowlands",        -- Shadowlands
+    [5]  = ICONS .. "INV_Misc_Head_Orc_01",                -- Warlords
+    [6]  = ICONS .. "Spell_Shadow_SummonFelGuard",         -- Legion
+    [7]  = ICONS .. "Spell_Nature_EyeOfTheStorm",          -- BfA
+    [8]  = ICONS .. "Spell_Shadow_SoulGem",                -- Shadowlands
     [9]  = ICONS .. "INV_Misc_Head_Dragon_Bronze",         -- Dragonflight
-    [10] = ICONS .. "INV_Misc_Gem_Azuredraenite_01",       -- The War Within
+    [10] = ICONS .. "INV_Misc_Gem_Sapphire_01",            -- The War Within
     [11] = ICONS .. "Spell_Arcane_TeleportSilvermoon",     -- Midnight
 }
 
