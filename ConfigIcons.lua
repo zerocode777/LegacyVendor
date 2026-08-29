@@ -90,6 +90,37 @@ addon.Visuals.RarityShort = {
     [3] = "Rare", [4] = "Epic", [5] = "Legendary",
 }
 
+-- Expansions are the primary filter, so they get art too. These are long-standing
+-- icons (present since their own expansion shipped), each thematically tied to that
+-- expansion's most recognisable content.
+addon.Visuals.ExpansionIcon = {
+    [0]  = ICONS .. "Achievement_Boss_Ragnaros",           -- Classic
+    [1]  = ICONS .. "Achievement_Boss_Illidan",            -- TBC
+    [2]  = ICONS .. "INV_Misc_Frostemblem_01",             -- Wrath
+    [3]  = ICONS .. "INV_Misc_Head_Dragon_Black",          -- Cataclysm
+    [4]  = ICONS .. "Achievement_Character_Pandaren_Female", -- Mists
+    [5]  = ICONS .. "Achievement_Zone_Draenor",            -- Warlords
+    [6]  = ICONS .. "Achievement_Boss_Argus",              -- Legion
+    [7]  = ICONS .. "Achievement_Alliance_KulTiras",       -- BfA
+    [8]  = ICONS .. "Achievement_Zone_Shadowlands",        -- Shadowlands
+    [9]  = ICONS .. "INV_Misc_Head_Dragon_Bronze",         -- Dragonflight
+    [10] = ICONS .. "INV_Misc_Gem_Azuredraenite_01",       -- The War Within
+    [11] = ICONS .. "Spell_Arcane_TeleportSilvermoon",     -- Midnight
+}
+
+-- Section header art, so each block is identifiable before the text is read.
+addon.Visuals.HeaderIcon = {
+    expansions = ICONS .. "INV_Misc_Map02",
+    bind       = ICONS .. "INV_Misc_Key_03",
+    sources    = ICONS .. "INV_Shield_06",
+    rarity     = ICONS .. "INV_Misc_Gem_Variety_01",
+    slots      = ICONS .. "INV_Chest_Chain_05",
+    types      = ICONS .. "INV_Misc_Bag_08",
+    general    = ICONS .. "INV_Misc_Gear_01",
+    advanced   = ICONS .. "INV_Misc_Book_09",
+    actions    = ICONS .. "INV_Misc_Coin_01",
+}
+
 -- "a335ee" -> {0.64, 0.21, 0.93}
 function addon.Visuals.HexToRGB(hex)
     if type(hex) ~= "string" or #hex < 6 then

@@ -2526,9 +2526,10 @@ local function OnEvent(self, event, ...)
 
     elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" then
         local merchantShown = MerchantFrame and MerchantFrame:IsShown()
-        if LegacyVendorDB and LegacyVendorDB.debug then
-            DebugPrint("Bag event:", event, "enabled=", tostring(LegacyVendorDB and LegacyVendorDB.enabled),
-                "merchantShown=", tostring(merchantShown))
+        -- Only trace when the merchant is actually open. Logging every bag event
+        -- during normal play floods the export log into uselessness.
+        if LegacyVendorDB and LegacyVendorDB.debug and merchantShown then
+            DebugPrint("Bag event:", event, "-> recount queued")
         end
         if LegacyVendorDB and LegacyVendorDB.enabled and merchantShown then
             addon.ScheduleMerchantButtonUpdate()

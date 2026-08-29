@@ -53,34 +53,49 @@ end
 -- A toggleable pill. `spec` may carry an icon texture or a colour swatch, which is
 -- what turns the old flat checkbox lists into something scannable at a glance.
 -- spec = { label, icon, color, tooltip, width }
+local CHIP_HEIGHT = 32
+local ICON_SIZE = 22
+Widgets.ChipHeight = CHIP_HEIGHT
+
 function Widgets.CreateChip(parent, spec, getState, onToggle)
     local chip = CreateFrame("Button", nil, parent)
-    chip:SetHeight(24)
+    chip:SetHeight(CHIP_HEIGHT)
 
     local hasArt = spec.icon or spec.color
-    local textX = hasArt and 24 or 9
+    local textX = hasArt and (ICON_SIZE + 12) or 10
 
     chip.Icon = nil
     if spec.icon then
         chip.Icon = chip:CreateTexture(nil, "ARTWORK")
-        chip.Icon:SetSize(14, 14)
+        chip.Icon:SetSize(ICON_SIZE, ICON_SIZE)
         chip.Icon:SetPoint("LEFT", 6, 0)
         chip.Icon:SetTexture(spec.icon)
         -- Trim the default icon border so it reads as a glyph, not a mini item button.
         chip.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+        -- Thin dark outline so bright icons stay legible on the lit chip background.
+        chip.IconEdge = chip:CreateTexture(nil, "BACKGROUND")
+        chip.IconEdge:SetPoint("TOPLEFT", chip.Icon, "TOPLEFT", -1, 1)
+        chip.IconEdge:SetPoint("BOTTOMRIGHT", chip.Icon, "BOTTOMRIGHT", 1, -1)
+        chip.IconEdge:SetColorTexture(0, 0, 0, 0.8)
     elseif spec.color then
         chip.Icon = chip:CreateTexture(nil, "ARTWORK")
-        chip.Icon:SetSize(10, 10)
+        chip.Icon:SetSize(ICON_SIZE - 4, ICON_SIZE - 4)
         chip.Icon:SetPoint("LEFT", 8, 0)
         chip.Icon:SetColorTexture(spec.color[1], spec.color[2], spec.color[3], 1)
+
+        chip.IconEdge = chip:CreateTexture(nil, "BACKGROUND")
+        chip.IconEdge:SetPoint("TOPLEFT", chip.Icon, "TOPLEFT", -1, 1)
+        chip.IconEdge:SetPoint("BOTTOMRIGHT", chip.Icon, "BOTTOMRIGHT", 1, -1)
+        chip.IconEdge:SetColorTexture(0, 0, 0, 0.9)
     end
 
-    chip.Text = chip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    chip.Text = chip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     chip.Text:SetPoint("LEFT", textX, 0)
     chip.Text:SetText(spec.label or "")
 
     local textW = chip.Text:GetStringWidth() or 40
-    chip:SetWidth(spec.width or (textX + textW + 10))
+    chip:SetWidth(spec.width or (textX + textW + 12))
 
     function chip:UpdateVisual()
         local on = getState() and true or false
@@ -126,19 +141,20 @@ function Widgets.LayoutChips(parent, chips, yOffset, leftInset, availableWidth, 
     spacing = spacing or 5
     availableWidth = availableWidth or (parent:GetWidth() - leftInset - 12)
 
+    local rowStride = CHIP_HEIGHT + 4
     local x, rowTop = 0, yOffset
     for _, chip in ipairs(chips) do
         local w = chip:GetWidth()
         if x > 0 and (x + w) > availableWidth then
             x = 0
-            rowTop = rowTop - 28
+            rowTop = rowTop - rowStride
         end
         chip:ClearAllPoints()
         chip:SetPoint("TOPLEFT", parent, "TOPLEFT", leftInset + x, rowTop)
         x = x + w + spacing
     end
 
-    return rowTop - 30
+    return rowTop - (rowStride + 4)
 end
 
 -- A collapsible titled section. Returns the header button plus a content frame the

@@ -332,17 +332,38 @@ local function CreateSimpleConfig()
     end
 
     -- Section header with optional subtitle
-    local function AddHeader(text, subtitle)
+    -- iconKey indexes addon.Visuals.HeaderIcon; each block gets its own glyph so
+    -- sections are identifiable while scrolling, before the text is read.
+    local function AddHeader(text, subtitle, iconKey)
+        local icon = iconKey and addon.Visuals and addon.Visuals.HeaderIcon[iconKey]
+        local textX = 10
+
+        if icon then
+            local tex = content:CreateTexture(nil, "ARTWORK")
+            tex:SetSize(26, 26)
+            tex:SetPoint("TOPLEFT", 10, yOffset + 4)
+            tex:SetTexture(icon)
+            tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+            local edge = content:CreateTexture(nil, "BACKGROUND")
+            edge:SetPoint("TOPLEFT", tex, "TOPLEFT", -1, 1)
+            edge:SetPoint("BOTTOMRIGHT", tex, "BOTTOMRIGHT", 1, -1)
+            edge:SetColorTexture(0, 0, 0, 0.8)
+
+            textX = 44
+        end
+
         local h = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        h:SetPoint("TOPLEFT", 10, yOffset)
+        h:SetPoint("TOPLEFT", textX, yOffset)
         h:SetText(text)
         yOffset = yOffset - 22
         if subtitle then
             local s = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            s:SetPoint("TOPLEFT", 14, yOffset)
+            s:SetPoint("TOPLEFT", textX + 4, yOffset)
             s:SetText("|cFF999999" .. subtitle .. "|r")
             yOffset = yOffset - 16
         end
+        yOffset = yOffset - 4
     end
 
     local FILTER_ORDER_HELP = "Expansion -> Mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks"
@@ -437,7 +458,7 @@ local function CreateSimpleConfig()
     -- GENERAL SETTINGS
     -- ==================================================
     AddHeader("|cFFFFD100General Settings|r",
-        "Priority: Expansion -> Mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks.")
+        "Priority: Expansion -> Mode -> Rarity -> Bind -> Slot/Type -> Source -> ilvl checks.", "general")
     SetTooltipScope("global")
 
     CreateCheckbox(content, "Enable LegacyVendor", "Enable or disable automatic selling.",
@@ -706,7 +727,7 @@ local function CreateSimpleConfig()
     -- EXPANSION FILTERS (plain checklist — no badges)
     -- ==================================================
     AddHeader("|cFFFFD100Which expansions?|r",
-        "Click an expansion to sell its items. This is the main filter - everything below narrows it further.")
+        "Click an expansion to sell its items. This is the main filter - everything below narrows it further.", "expansions")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, RefreshLiveSummary)
@@ -717,7 +738,7 @@ local function CreateSimpleConfig()
     -- BIND TYPE FILTERS (global)
     -- ==================================================
     AddHeader("|cFFFFD100Which bind types?|r",
-        "An item must match one of these to sell.")
+        "An item must match one of these to sell.", "bind")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames)
@@ -729,7 +750,7 @@ local function CreateSimpleConfig()
     -- Step 4: tick = SKIP (never sell); no master toggle
     -- ==================================================
     AddHeader("|cFFFFD100Never sell from|r  |cFFFF9944(active = protected)|r",
-        "Highlighted sources are skipped entirely. Leave all off to allow every source.")
+        "Highlighted sources are skipped entirely. Leave all off to allow every source.", "sources")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames)
@@ -740,7 +761,7 @@ local function CreateSimpleConfig()
     -- RARITY FILTERS (global)
     -- ==================================================
     AddHeader("|cFFFFD100Which rarities?|r",
-        "An item must match one of these to sell.")
+        "An item must match one of these to sell.", "rarity")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames)
@@ -751,7 +772,7 @@ local function CreateSimpleConfig()
     -- EQUIPMENT SLOT FILTERS (global)
     -- ==================================================
     AddHeader("|cFFFFD100Which gear slots?|r",
-        "Equippable items must match one of these slots.")
+        "Equippable items must match one of these slots.", "slots")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames)
@@ -762,7 +783,7 @@ local function CreateSimpleConfig()
     -- ITEM TYPE FILTERS (global)
     -- ==================================================
     AddHeader("|cFFFFD100Which non-gear items?|r",
-        "Crafting mats and reagents are off by default - turn them on deliberately.")
+        "Crafting mats and reagents are off by default - turn them on deliberately.", "types")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames)
@@ -944,7 +965,7 @@ local function CreateSimpleConfig()
     -- ==================================================
     -- QUICK ACTIONS
     -- ==================================================
-    AddHeader("|cFFFFD100Quick Actions|r")
+    AddHeader("|cFFFFD100Quick Actions|r", nil, "actions")
 
     MakeBtn(10, "Enable Legacy Expansions", function()
         for i = 0, addon.CURRENT_EXPANSION - 1 do LegacyVendorDB.expansions[i] = true end

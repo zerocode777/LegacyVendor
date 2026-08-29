@@ -44,6 +44,8 @@ end
 
 -- Expansions: the primary filter, so it gets the widest, most prominent row.
 function Sections.RenderExpansions(content, yOffset, maxExpansion, onChange)
+    if not ensureRefs() then return yOffset end
+
     local specs = {}
     for i = 0, maxExpansion do
         local exp = addon.EXPANSIONS[i]
@@ -51,6 +53,7 @@ function Sections.RenderExpansions(content, yOffset, maxExpansion, onChange)
             specs[#specs + 1] = {
                 key = i,
                 label = exp.short or exp.name,
+                icon = V.ExpansionIcon[i],
                 tooltip = "Sell items from " .. exp.name .. ".",
             }
         end
