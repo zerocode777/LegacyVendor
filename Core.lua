@@ -2209,22 +2209,48 @@ UpdateBagHighlightsBody = function()
 
     -- Index whatever buttons the active bag addon exposes by bag:slot, so the common
     -- case is a table lookup per item rather than a UI walk.
+    --
+    -- Bag addons pool buttons heavily - EllesmereUI reports ~220 buttons for ~150
+    -- items - and a recycled button keeps the bag/slot ID of whatever it displayed
+    -- last. So several buttons can claim the same bag:slot while only one is really
+    -- showing that item. Two rules disambiguate:
+    --   1. IsVisible(), not IsShown(). IsShown() is true for a button inside a
+    --      hidden category container, so it happily matches parked pool entries.
+    --   2. The displayed icon must match the icon of the item actually in that slot,
+    --      which catches a recycled button that has not been re-rendered yet.
+    local function ButtonDisplaysSlotItem(btn, bag, slot)
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if not (info and info.iconFileID) then return true end
+        local iconRegion = btn.icon or btn.Icon
+        if not (iconRegion and iconRegion.GetTexture) then return true end
+        local shown = iconRegion:GetTexture()
+        if not shown then return false end
+        return shown == info.iconFileID
+    end
+
     local buttonBySlot = {}
     local customButtons, customSource, customScanned = CollectCustomBagButtons()
     for _, btn in ipairs(customButtons) do
         local b, sl = GetButtonBagAndSlot(btn)
         if b ~= nil and sl ~= nil and sl > 0 then
-            local key = b .. ":" .. sl
-            -- Keep the first visible button for a slot; pooled/hidden duplicates
-            -- exist in several bag addons and must not shadow the real one.
-            local shown = (btn.IsShown and btn:IsShown()) or (btn.IsVisible and btn:IsVisible())
-            if shown and not buttonBySlot[key] then
-                buttonBySlot[key] = btn
+            local visible = btn.IsVisible and btn:IsVisible()
+            if visible then
+                local key = b .. ":" .. sl
+                local existing = buttonBySlot[key]
+                -- An icon-verified button always wins over an unverified one.
+                if not existing then
+                    buttonBySlot[key] = btn
+                elseif not existing._lvVerified and ButtonDisplaysSlotItem(btn, b, sl) then
+                    buttonBySlot[key] = btn
+                end
+                if buttonBySlot[key] == btn then
+                    btn._lvVerified = ButtonDisplaysSlotItem(btn, b, sl) or nil
+                end
             end
         end
     end
 
-    local applied, missing = 0, 0
+    local applied, missing, verified = 0, 0, 0
     local globalEnumList, legacyNameList
 
     for _, item in ipairs(items) do
@@ -2244,7 +2270,8 @@ UpdateBagHighlightsBody = function()
         end
 
         if button then
-            local shown = (button.IsShown and button:IsShown()) or (button.IsVisible and button:IsVisible())
+            if button._lvVerified then verified = verified + 1 end
+            local shown = button.IsVisible and button:IsVisible()
             if shown then
                 local ok, err = pcall(ApplyHighlight, button)
                 if ok then
@@ -2268,8 +2295,8 @@ UpdateBagHighlightsBody = function()
     end
 
     if LegacyVendorDB and LegacyVendorDB.debug then
-        DebugPrint(("Highlight pass: %d sellable, %d highlighted, %d without a visible button (source=%s, buttons=%d)")
-            :format(#items, applied, missing, tostring(customSource), customScanned or 0))
+        DebugPrint(("Highlight pass: %d sellable, %d highlighted (%d icon-verified), %d without a visible button (source=%s, buttons=%d)")
+            :format(#items, applied, verified, missing, tostring(customSource), customScanned or 0))
     end
 end
 
