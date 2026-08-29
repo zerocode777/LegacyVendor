@@ -221,6 +221,7 @@ local defaults = {
     highlightColor = { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }, -- Light purple glow by default
     highlightStyle = "pulse", -- Visual style id, see addon.HIGHLIGHT_STYLES
     protectUncollected = true, -- Never sell uncollected appearances/mounts/toys/pets
+    showTooltipInfo = true, -- Add a "will sell / keeping - why" line to item tooltips
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -809,7 +810,7 @@ local function ShouldSellItem(bag, slot)
     -- Check if item is excluded
     if db.excludedItems[itemID] then
         DebugPrint("Item excluded:", itemID)
-        return false
+        return false, "you excluded this item"
     end
     
     -- Get item info using modern API
@@ -822,7 +823,7 @@ local function ShouldSellItem(bag, slot)
     local itemCount = containerInfo.stackCount
     
     -- Don't sell locked items
-    if isLocked then return false end
+    if isLocked then return false, "item is locked" end
 
     -- === HARD STOP: uncollected collectibles ===
     -- Runs before every sell filter. Selling the only source of an appearance,
@@ -831,7 +832,7 @@ local function ShouldSellItem(bag, slot)
         local collectibleReason = GetCollectibleProtection(itemID, itemLink)
         if collectibleReason then
             DebugPrint("Protected (" .. collectibleReason .. "):", itemLink)
-            return false
+            return false, collectibleReason
         end
     end
 
@@ -856,7 +857,7 @@ local function ShouldSellItem(bag, slot)
     local expansionID = GetItemExpansionID(itemID)
     if not expansionID then
         DebugPrint("Could not determine expansion:", itemLink)
-        return false
+        return false, "expansion unknown"
     end
 
     local filterExpansionID = GetFilterExpansionID(itemID, itemLink, expansionID, itemInfo[4], classID, equipLoc, bag, slot)
@@ -874,7 +875,7 @@ local function ShouldSellItem(bag, slot)
             -- allow current-season dungeon items to flow through as current expansion.
             if not (db.sellMode == "everything" and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
                 DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
-                return false
+                return false, "current-season Mythic+ gear"
             end
         end
     end
@@ -882,7 +883,7 @@ local function ShouldSellItem(bag, slot)
     -- No sell price = can't sell
     if not sellPrice or sellPrice == 0 then
         DebugPrint("No sell price:", itemLink, "bag=", bag, "slot=", slot)
-        return false
+        return false, "vendors will not buy it"
     end
 
     -- Special handling for gray items - bypass most filters if sellGray is enabled
@@ -893,8 +894,9 @@ local function ShouldSellItem(bag, slot)
 
     -- === FILTER 1: EXPANSION ===
     if not db.expansions[filterExpansionID] then
+        local expName = (addon.EXPANSIONS[filterExpansionID] and (addon.EXPANSIONS[filterExpansionID].short or addon.EXPANSIONS[filterExpansionID].name)) or "that expansion"
         DebugPrint("Expansion disabled:", filterExpansionID, itemLink, "bag=", bag, "slot=", slot)
-        return false
+        return false, expName .. " is not selected"
     end
 
     -- Resolve against filterExpansionID (which GetFilterExpansionID may have redirected,
@@ -906,12 +908,15 @@ local function ShouldSellItem(bag, slot)
     local activeItemTypes = resolved.itemTypes
     local activeOnlyLowerIlvl = resolved.onlyLowerIlvl
 
+    local sourceRejectReason
     local function PassesSourceFilter()
         if db.sellMode ~= "matching" then return true end
         local itemSource = GetItemSource(itemID, bag, slot)
         DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
         if addon.SourceSkipped(resolved.itemSources, itemSource) then
             DebugPrint("Source skipped:", itemSource, itemLink)
+            local sn = (addon.Visuals and addon.Visuals.ShortLabel[itemSource]) or itemSource
+            sourceRejectReason = "you never sell from " .. sn
             return false
         end
         return true
@@ -928,7 +933,9 @@ local function ShouldSellItem(bag, slot)
     if activeRarities and activeRarities[quality] ~= nil then
         if not activeRarities[quality] then
             DebugPrint("Rarity not enabled:", quality, itemLink)
-            return false
+            local rn = (addon.Visuals and addon.Visuals.RarityShort[quality])
+                or (addon.RARITIES[quality] and addon.RARITIES[quality].name) or "that rarity"
+            return false, rn .. " is not selected"
         end
     end
 
@@ -949,7 +956,8 @@ local function ShouldSellItem(bag, slot)
 
     if not bindAllowed then
         DebugPrint("Bind type not enabled:", bindStatus, itemLink)
-        return false
+        local bn = (addon.Visuals and addon.Visuals.ShortLabel[bindStatus]) or (bindStatus or "that bind type")
+        return false, bn .. " is not selected"
     end
     
     -- === FILTER 4: EQUIPMENT SLOTS (for equippable items) ===
@@ -960,7 +968,8 @@ local function ShouldSellItem(bag, slot)
         if activeEquipSlots and activeEquipSlots[equipLoc] ~= nil then
             if not activeEquipSlots[equipLoc] then
                 DebugPrint("Equipment slot not enabled:", equipLoc, itemLink)
-                return false
+                local slotName = (addon.EQUIP_SLOTS[equipLoc] and addon.EQUIP_SLOTS[equipLoc].name) or "that slot"
+                return false, slotName .. " is not selected"
             end
         end
     end
@@ -971,13 +980,15 @@ local function ShouldSellItem(bag, slot)
         if classID ~= 0 and activeItemTypes and classID and activeItemTypes[classID] ~= nil then
             if not activeItemTypes[classID] then
                 DebugPrint("Item type not enabled:", classID, "(class ID)", itemLink)
-                return false
+                local tn = (addon.Visuals and addon.Visuals.ItemTypeShort[classID])
+                    or (addon.ITEM_TYPES[classID] and addon.ITEM_TYPES[classID].name) or "that item type"
+                return false, tn .. " is not selected"
             end
         elseif classID and classID ~= 0 and classID ~= 2 and classID ~= 4 then
             -- Non-equippable item with unrecognized classID — skip by default.
             -- classID 2 = Weapon and 4 = Armor are handled by equipment slot filters.
             DebugPrint("Unrecognized non-equipment item type, skipping:", classID, itemLink)
-            return false
+            return false, "this kind of item is not in your filters"
         end
     end
     
@@ -985,7 +996,7 @@ local function ShouldSellItem(bag, slot)
     local itemLevel = itemInfo[4] or 0
     if itemLevel < db.minItemLevel then
         DebugPrint("Below min item level:", itemLink)
-        return false
+        return false, "below your minimum item level"
     end
 
     -- === FILTER 6: ONLY SELL IF LOWER ILVL THAN EQUIPPED ===
@@ -1026,7 +1037,7 @@ local function ShouldSellItem(bag, slot)
     -- In "matching" mode, items whose source is in the skip-set (via addon.SourceSkipped)
     -- are never sold; leaving the skip-set empty allows every source.
     if not PassesSourceFilter() then
-        return false
+        return false, sourceRejectReason or "excluded source"
     end
     
     DebugPrint("Will sell:", itemLink, "Expansion:", filterExpansionID, "Quality:", quality, "Bind:", bindStatus, "Class:", classID)
@@ -2627,6 +2638,63 @@ function addon.ScheduleMerchantButtonUpdate()
             addon.UpdateMerchantButton()
         end
     end)
+end
+
+-- ==========================================
+-- TOOLTIP INTEGRATION
+-- ==========================================
+-- Puts the sell decision, and the reason for it, on the item itself. All of this
+-- reasoning already existed inside ShouldSellItem; until now it was only visible in
+-- debug mode, so a user had no way to ask "why is this one not selling?".
+
+local tooltipBusy = false
+
+local function AppendSellLine(tooltip, bag, slot)
+    if not LegacyVendorDB or not LegacyVendorDB.enabled then return end
+    if LegacyVendorDB.showTooltipInfo == false then return end
+    if not tooltip or not tooltip.AddLine then return end
+
+    -- ShouldSellItem can itself read tooltip data (source detection), so guard
+    -- against re-entering this hook from inside our own evaluation.
+    if tooltipBusy then return end
+    tooltipBusy = true
+
+    -- ShouldSellItem returns (true, itemLink, count, price) when it will sell, and
+    -- (false, reason) when it will not - so the second slot means different things.
+    local ok, willSell, second, _third, fourth = pcall(ShouldSellItem, bag, slot)
+
+    tooltipBusy = false
+    if not ok then return end
+
+    if willSell then
+        local price = fourth
+        local text = "|cFF00CCFFLegacy Vendor:|r |cFF44FF44will sell|r"
+        if price and price > 0 then
+            text = text .. " |cFF888888(" .. FormatMoney(price) .. ")|r"
+        end
+        tooltip:AddLine(text)
+    elseif second then
+        tooltip:AddLine("|cFF00CCFFLegacy Vendor:|r |cFFFFCC00keeping|r |cFF888888- " .. second .. "|r")
+    else
+        return
+    end
+
+    tooltip:Show()
+end
+
+do
+    -- SetBagItem is the one call that gives us bag+slot directly, which is what the
+    -- filters need; hooking it covers bag, bank and most bag-addon tooltips.
+    if GameTooltip and GameTooltip.SetBagItem then
+        hooksecurefunc(GameTooltip, "SetBagItem", function(self, bag, slot)
+            AppendSellLine(self, bag, slot)
+        end)
+    end
+    if ItemRefTooltip and ItemRefTooltip.SetBagItem then
+        hooksecurefunc(ItemRefTooltip, "SetBagItem", function(self, bag, slot)
+            AppendSellLine(self, bag, slot)
+        end)
+    end
 end
 
 -- Register events

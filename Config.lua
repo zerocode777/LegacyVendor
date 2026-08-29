@@ -68,12 +68,25 @@ end
 local function CreateSimpleConfig()
     local configFrame = CreateFrame("Frame", "LegacyVendorConfigFrame", UIParent, "BasicFrameTemplateWithInset")
     configFrame:SetSize(660, 700)
-    configFrame:SetPoint("CENTER")
+    -- Restore wherever the user last dragged the window. Toggling a filter rebuilds
+    -- this frame, and snapping back to centre every time made that unusable.
+    do
+        local pos = addon._configFramePos
+        if pos and pos.point then
+            configFrame:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
+        else
+            configFrame:SetPoint("CENTER")
+        end
+    end
     configFrame:SetMovable(true)
     configFrame:EnableMouse(true)
     configFrame:RegisterForDrag("LeftButton")
     configFrame:SetScript("OnDragStart", configFrame.StartMoving)
-    configFrame:SetScript("OnDragStop", configFrame.StopMovingOrSizing)
+    configFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        local point, _, relPoint, x, y = self:GetPoint()
+        addon._configFramePos = { point = point, relPoint = relPoint, x = x, y = y }
+    end)
     configFrame:Hide()
 
     configFrame.TitleBg:SetHeight(30)
@@ -183,6 +196,16 @@ local function CreateSimpleConfig()
 
     local function RefreshConfigFrame()
         local wasShown = configFrame:IsShown()
+
+        -- Capture where the window sits and how far it is scrolled, so a rebuild
+        -- (any bulk All/None, or a branch in the step flow) resumes in place
+        -- instead of jumping back to centre at the top.
+        local point, _, relPoint, x, y = configFrame:GetPoint()
+        if point then
+            addon._configFramePos = { point = point, relPoint = relPoint, x = x, y = y }
+        end
+        addon._configScroll = scrollFrame and scrollFrame:GetVerticalScroll() or 0
+
         configFrame:Hide()
         addon.configFrame = nil
         CreateSimpleConfig()
@@ -547,6 +570,11 @@ local function CreateSimpleConfig()
         function(v) LegacyVendorDB.showSummary = v end)
 
     AddSubLabel("APPEARANCE")
+
+    CreateCheckbox(content, "Show sell info on item tooltips",
+        "Adds a line to any bag item's tooltip saying whether it will sell, and if not, why not.",
+        function() return LegacyVendorDB.showTooltipInfo ~= false end,
+        function(v) LegacyVendorDB.showTooltipInfo = v end)
 
 
 
@@ -1106,6 +1134,16 @@ local function CreateSimpleConfig()
 
     content:SetHeight(math.abs(yOffset) + 50)
     RefreshSummary()
+
+    -- Scroll range is only known after the new content lays out, so defer a frame.
+    if addon._configScroll and addon._configScroll > 0 then
+        local target = addon._configScroll
+        C_Timer.After(0, function()
+            if not scrollFrame then return end
+            local maxScroll = scrollFrame:GetVerticalScrollRange() or 0
+            scrollFrame:SetVerticalScroll(math.min(target, maxScroll))
+        end)
+    end
 
     addon.configFrame = configFrame
     return configFrame
