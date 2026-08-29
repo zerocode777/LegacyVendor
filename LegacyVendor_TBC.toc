@@ -11,4 +11,7 @@
 Compat.lua
 Filters.lua
 Core.lua
+ConfigWidgets.lua
+ConfigIcons.lua
+ConfigSections.lua
 Config.lua

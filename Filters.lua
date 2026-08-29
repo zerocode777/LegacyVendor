@@ -143,3 +143,57 @@ function addon.BuildActiveSummary(db)
   }
   return { mode = mode, chips = chips, headline = "Selling " .. rarText .. " gear from " .. expText .. skipNote .. "." }
 end
+
+-- Builds one plain-English sentence describing exactly what the current filter set
+-- sells. The settings panel shows this live as options are clicked, so each filter
+-- visibly narrows the SAME rule rather than reading as an unrelated toggle - the
+-- separate checkbox groups otherwise give no clue that they combine.
+local HL = "|cFFFFD100"   -- highlight a chosen value
+local RS = "|r"
+
+local function hl(text)
+  return HL .. text .. RS
+end
+
+function addon.BuildFilterSentence(db)
+  local exps = enabledExpansionNames(db)
+  if #exps == 0 then
+    return "|cFFFF7F50Nothing will sell|r - no expansions are selected."
+  end
+
+  local expText = hl(joinList(exps))
+  local mode = db.sellMode or "everything"
+
+  if mode == "everything" then
+    return "Selling " .. hl("everything") .. " from " .. expText .. "."
+  end
+
+  local resolved = addon.ResolveActiveFilters(db, db.selectedExpansionProfileID or 0)
+
+  -- Rarity
+  local rarNames = {}
+  for id = 0, 7 do
+    if resolved.rarities[id] then rarNames[#rarNames + 1] = (addon.Visuals and addon.Visuals.RarityShort[id]) or rarName(db, id) end
+  end
+  local rarPart = (#rarNames > 0) and hl(joinList(rarNames)) or hl("any rarity")
+
+  -- Bind
+  local bindNames = {}
+  for key, on in pairs(resolved.bindTypes or {}) do
+    if on then
+      bindNames[#bindNames + 1] = (addon.Visuals and addon.Visuals.ShortLabel[key]) or key
+    end
+  end
+  table.sort(bindNames)
+  local bindPart = (#bindNames > 0) and (" that are " .. hl(joinList(bindNames))) or ""
+
+  -- Sources being skipped
+  local skipped2 = {}
+  for k, v in pairs(resolved.itemSources) do
+    if v == true then skipped2[#skipped2 + 1] = SOURCE_LABELS[k] or k end
+  end
+  table.sort(skipped2)
+  local skipPart = (#skipped2 > 0) and (", but never from " .. hl(joinList(skipped2))) or ""
+
+  return "Selling " .. rarPart .. " items from " .. expText .. bindPart .. skipPart .. "."
+end

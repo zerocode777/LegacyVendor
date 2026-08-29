@@ -85,19 +85,12 @@ local function CreateSimpleConfig()
     local insetOffsetT = configFrame.Inset and -5 or -32
     local insetOffsetB = configFrame.Inset and 5 or 8
 
-    -- Active filter summary bar (top)
-    local topSummaryFrame = CreateFrame("Frame", nil, configFrame)
+    -- Live "what will actually sell" bar: one plain-English sentence that narrows as
+    -- filters are clicked, plus a real count from the player's current bags. This is
+    -- the panel's answer to "what do these settings actually do?".
+    local topSummaryFrame = addon.Widgets.CreateSummaryBar(configFrame)
     topSummaryFrame:SetPoint("TOPLEFT", insetFrame, "TOPLEFT", 8, insetOffsetT - 1)
     topSummaryFrame:SetPoint("TOPRIGHT", insetFrame, "TOPRIGHT", -8, insetOffsetT - 1)
-    topSummaryFrame:SetHeight(20)
-    local topSummaryBgTex = topSummaryFrame:CreateTexture(nil, "BACKGROUND")
-    topSummaryBgTex:SetAllPoints()
-    topSummaryBgTex:SetColorTexture(0.02, 0.15, 0.02, 0.85)
-    local topSummaryText = topSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    topSummaryText:SetPoint("LEFT", topSummaryFrame, "LEFT", 6, 0)
-    topSummaryText:SetPoint("RIGHT", topSummaryFrame, "RIGHT", -6, 0)
-    topSummaryText:SetJustifyH("LEFT")
-    topSummaryText:SetWordWrap(false)
 
     -- Search bar
     local searchFrame = CreateFrame("Frame", nil, configFrame)
@@ -132,18 +125,16 @@ local function CreateSimpleConfig()
     scrollFrame:SetScrollChild(content)
 
     -- Active filter summary bar (bottom)
-    local bottomSummaryFrame = CreateFrame("Frame", nil, configFrame)
-    bottomSummaryFrame:SetPoint("TOPLEFT", scrollFrame, "BOTTOMLEFT", 3, -3)
-    bottomSummaryFrame:SetPoint("TOPRIGHT", scrollFrame, "BOTTOMRIGHT", 25, -3)
-    bottomSummaryFrame:SetHeight(20)
-    local bottomSummaryBgTex = bottomSummaryFrame:CreateTexture(nil, "BACKGROUND")
-    bottomSummaryBgTex:SetAllPoints()
-    bottomSummaryBgTex:SetColorTexture(0.02, 0.15, 0.02, 0.85)
-    local bottomSummaryText = bottomSummaryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    bottomSummaryText:SetPoint("LEFT", bottomSummaryFrame, "LEFT", 6, 0)
-    bottomSummaryText:SetPoint("RIGHT", bottomSummaryFrame, "RIGHT", -6, 0)
-    bottomSummaryText:SetJustifyH("LEFT")
-    bottomSummaryText:SetWordWrap(false)
+    -- Presets strip along the bottom: the fastest path from "installed" to
+    -- "configured", which is the step most users never finish.
+    local presetFrame = CreateFrame("Frame", nil, configFrame)
+    presetFrame:SetPoint("TOPLEFT", scrollFrame, "BOTTOMLEFT", 3, -3)
+    presetFrame:SetPoint("TOPRIGHT", scrollFrame, "BOTTOMRIGHT", 25, -3)
+    presetFrame:SetHeight(30)
+
+    local presetLabel = presetFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    presetLabel:SetPoint("LEFT", presetFrame, "LEFT", 4, 0)
+    presetLabel:SetText("|cFF888888Start from:|r")
 
     if addon.EnsureExpansionProfiles then
         addon.EnsureExpansionProfiles(LegacyVendorDB)
@@ -191,6 +182,47 @@ local function CreateSimpleConfig()
         end
     end
 
+    -- Build the preset buttons now that RefreshConfigFrame exists. Applying a preset
+    -- rewrites several filter groups at once, so the panel is rebuilt to redraw every
+    -- chip's state rather than trying to refresh each one individually.
+    do
+        local anchor = presetLabel
+        for _, preset in ipairs(addon.Sections.Presets) do
+            local btn = addon.Widgets.CreatePresetButton(presetFrame, preset.name, preset.tooltip,
+                function()
+                    preset.apply(LegacyVendorDB)
+                    if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+                    RefreshButton()
+                    RefreshConfigFrame()
+                    addon.Print(("Applied the \"%s\" preset."):format(preset.name))
+                end)
+            btn:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+            anchor = btn
+        end
+    end
+
+    -- Display order for the per-expansion "Advanced" overrides further down. The main
+    -- filter sections render as chips via addon.Sections and carry their own ordering.
+    local rarityOrder = { 0, 1, 2, 3, 4, 5, 6, 7 }
+    local slotOrder = {
+        "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER", "INVTYPE_CLOAK",
+        "INVTYPE_CHEST", "INVTYPE_ROBE", "INVTYPE_WRIST", "INVTYPE_HAND",
+        "INVTYPE_WAIST", "INVTYPE_LEGS", "INVTYPE_FEET",
+        "INVTYPE_FINGER", "INVTYPE_TRINKET",
+        "INVTYPE_WEAPON", "INVTYPE_2HWEAPON", "INVTYPE_WEAPONMAINHAND",
+        "INVTYPE_WEAPONOFFHAND", "INVTYPE_HOLDABLE", "INVTYPE_SHIELD",
+        "INVTYPE_RANGED", "INVTYPE_RANGEDRIGHT",
+        "INVTYPE_BODY", "INVTYPE_TABARD",
+    }
+    local generalTypeOrder = { 1, 12, 13, 15 }
+    local craftingTypeOrder = { 3, 5, 7, 9 }
+    local sourceOrder = { "consumable", "dungeon", "raid", "outdoor", "profession",
+                          "vendor", "pvp", "reputation", "housing", "unknown" }
+
+    -- Assigned once RefreshSummary exists; the chip sections below capture it by
+    -- name so every filter click refreshes the live sentence and count.
+    local RefreshLiveSummary
+
     -- Checkbox registry for search filtering
     local allCheckboxEntries = {}
 
@@ -226,18 +258,47 @@ local function CreateSimpleConfig()
         end
     end
 
-    -- Step 6: summary consumes addon.BuildActiveSummary
+    -- Formats copper as a short gold string for the live count line.
+    local function ShortMoney(copper)
+        if not copper or copper <= 0 then return "0g" end
+        local gold = math.floor(copper / 10000)
+        if gold > 0 then return gold .. "g" end
+        local silver = math.floor((copper % 10000) / 100)
+        if silver > 0 then return silver .. "s" end
+        return (copper % 100) .. "c"
+    end
+
+    -- Recomputes the sentence AND the real bag count. The count is what turns an
+    -- abstract filter set into something checkable, so it is worth the scan - it
+    -- only ever runs while this panel is open and a setting just changed.
+    local countPending = false
     local function RefreshSummary()
-        local s = addon.BuildActiveSummary(LegacyVendorDB)
-        topSummaryText:SetText("|cFF44FF44" .. s.headline .. "|r")
-        local detail = (#s.chips > 0) and table.concat(s.chips, "   ") or ""
-        bottomSummaryText:SetText(detail)
-        bottomSummaryText:SetTextColor(
-            s.mode == "matching" and 0.8 or 0.4,
-            s.mode == "matching" and 0.9 or 0.4,
-            0.5)
+        topSummaryFrame:SetSentence(addon.BuildFilterSentence(LegacyVendorDB))
+
+        -- Coalesce rapid clicking into one scan.
+        if not countPending then
+            countPending = true
+            C_Timer.After(0.05, function()
+                countPending = false
+                if not configFrame:IsShown() then return end
+                if addon.CountSellable then
+                    local count, gold = addon.CountSellable()
+                    if count == 0 then
+                        topSummaryFrame:SetCount("Nothing in your bags matches right now.", true)
+                    else
+                        topSummaryFrame:SetCount(string.format(
+                            "%d item%s in your bags would sell right now  (about %s)",
+                            count, count == 1 and "" or "s", ShortMoney(gold)), false)
+                    end
+                end
+            end)
+        end
+
         RefreshDetailGrey()
     end
+
+    -- Chip sections call this by name; keep both spellings pointing at one function.
+    RefreshLiveSummary = RefreshSummary
 
     -- Wire up search box scripts
     searchBox:SetScript("OnTextChanged", function(self)
@@ -644,44 +705,22 @@ local function CreateSimpleConfig()
     -- ==================================================
     -- EXPANSION FILTERS (plain checklist — no badges)
     -- ==================================================
-    AddHeader("|cFFFFD100Expansion Filters|r  |cFF888888(check = SELL)|r",
-        "Tick which expansions to sell from. Use 'matching' mode to apply detailed filters.")
+    AddHeader("|cFFFFD100Which expansions?|r",
+        "Click an expansion to sell its items. This is the main filter - everything below narrows it further.")
     SetTooltipScope("global")
 
-    for i = 0, maxExpansion do
-        local exp = addon.EXPANSIONS[i]
-        if exp then
-            CreateCheckbox2Col(content, (exp.short or exp.name),
-                "Enable selling items from " .. exp.name,
-                function() return LegacyVendorDB.expansions[i] end,
-                function(v) LegacyVendorDB.expansions[i] = v end)
-        end
-    end
-    Flush2Col()
+    yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, RefreshLiveSummary)
 
     AddSep()
 
     -- ==================================================
     -- BIND TYPE FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Bind Type Filters|r  |cFF888888(global)|r")
+    AddHeader("|cFFFFD100Which bind types?|r",
+        "An item must match one of these to sell.")
     SetTooltipScope("global")
 
-    local bindBoP = CreateCheckbox(content, "Sell Soulbound (BoP)", "Sell Bind on Pickup items.",
-        function() return LegacyVendorDB.sellBoP end,
-        function(v) LegacyVendorDB.sellBoP = v end, true)
-    table.insert(detailFrames, bindBoP)
-
-    local bindBoE = CreateCheckbox(content, "Sell Bound BoE", "Sell Bind on Equip items that are already bound.",
-        function() return LegacyVendorDB.sellBoE end,
-        function(v) LegacyVendorDB.sellBoE = v end, true)
-    table.insert(detailFrames, bindBoE)
-
-    local bindUnbound = CreateCheckbox(content, "Sell Not Bound  |cFFFF5555(careful!)|r",
-        "Sell unbound items — old food, reagents, etc.",
-        function() return LegacyVendorDB.sellUnbound end,
-        function(v) LegacyVendorDB.sellUnbound = v end, true)
-    table.insert(detailFrames, bindUnbound)
+    yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames)
 
     AddSep()
 
@@ -689,113 +728,44 @@ local function CreateSimpleConfig()
     -- SOURCE SKIP-LIST (global)
     -- Step 4: tick = SKIP (never sell); no master toggle
     -- ==================================================
-    AddHeader("|cFFFFD100Don't sell from these sources|r  |cFF888888(tick to SKIP)|r",
-        "Ticked sources are never sold in 'matching' mode. Leave all unticked to allow every source.")
+    AddHeader("|cFFFFD100Never sell from|r  |cFFFF9944(active = protected)|r",
+        "Highlighted sources are skipped entirely. Leave all off to allow every source.")
     SetTooltipScope("global")
 
-    local sourceOrder = { "consumable", "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown" }
-    for _, sourceKey in ipairs(sourceOrder) do
-        local source = addon.ITEM_SOURCES[sourceKey]
-        if source then
-            local cb = CreateCheckbox2Col(content, source.name, "SKIP " .. source.name .. " (never sell).",
-                function() return LegacyVendorDB.itemSources[sourceKey] == true end,
-                function(v) LegacyVendorDB.itemSources[sourceKey] = v and true or nil end, true)
-            table.insert(detailFrames, cb)
-        end
-    end
-    Flush2Col()
+    yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames)
 
     AddSep()
 
     -- ==================================================
     -- RARITY FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Rarity Filters|r  |cFF888888(global)|r",
-        "Items must match a checked rarity to be sold.")
+    AddHeader("|cFFFFD100Which rarities?|r",
+        "An item must match one of these to sell.")
     SetTooltipScope("global")
 
-    local rarityOrder = {0, 1, 2, 3, 4, 5, 6, 7}
-    for _, rarityID in ipairs(rarityOrder) do
-        local rarity = addon.RARITIES[rarityID]
-        if rarity then
-            local coloredName = string.format("|cFF%s%s|r", rarity.color, rarity.name)
-            local cb = CreateCheckbox2Col(content, coloredName, "Sell " .. rarity.name .. " quality items.",
-                function() return LegacyVendorDB.rarities[rarityID] end,
-                function(v) LegacyVendorDB.rarities[rarityID] = v end)
-            table.insert(detailFrames, cb)
-        end
-    end
-    Flush2Col()
+    yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames)
 
     AddSep()
 
     -- ==================================================
     -- EQUIPMENT SLOT FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Equipment Slot Filters|r  |cFF888888(global)|r",
-        "Equippable items must match a checked slot.")
+    AddHeader("|cFFFFD100Which gear slots?|r",
+        "Equippable items must match one of these slots.")
     SetTooltipScope("global")
 
-    local slotOrder = {
-        "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER", "INVTYPE_CLOAK",
-        "INVTYPE_CHEST", "INVTYPE_ROBE", "INVTYPE_WRIST", "INVTYPE_HAND",
-        "INVTYPE_WAIST", "INVTYPE_LEGS", "INVTYPE_FEET",
-        "INVTYPE_FINGER", "INVTYPE_TRINKET",
-        "INVTYPE_WEAPON", "INVTYPE_2HWEAPON", "INVTYPE_WEAPONMAINHAND",
-        "INVTYPE_WEAPONOFFHAND", "INVTYPE_HOLDABLE", "INVTYPE_SHIELD",
-        "INVTYPE_RANGED", "INVTYPE_RANGEDRIGHT",
-        "INVTYPE_BODY", "INVTYPE_TABARD"
-    }
-    for _, slotKey in ipairs(slotOrder) do
-        local slot = addon.EQUIP_SLOTS[slotKey]
-        if slot then
-            local cb = CreateCheckbox2Col(content, slot.name, "Sell items in " .. slot.name .. " slot.",
-                function() return LegacyVendorDB.equipSlots[slotKey] end,
-                function(v) LegacyVendorDB.equipSlots[slotKey] = v end)
-            table.insert(detailFrames, cb)
-        end
-    end
-    Flush2Col()
+    yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames)
 
     AddSep()
 
     -- ==================================================
     -- ITEM TYPE FILTERS (global)
     -- ==================================================
-    AddHeader("|cFFFFD100Non-Equippable Item Types|r  |cFF888888(global)|r",
-        "Consumables are handled in Source Filters to avoid duplicate controls.")
+    AddHeader("|cFFFFD100Which non-gear items?|r",
+        "Crafting mats and reagents are off by default - turn them on deliberately.")
     SetTooltipScope("global")
 
-    local generalTypeOrder = {1, 12, 13, 15}
-    for _, typeID in ipairs(generalTypeOrder) do
-        local itemType = addon.ITEM_TYPES[typeID]
-        if itemType then
-            local cb = CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. ".",
-                function() return LegacyVendorDB.itemTypes[typeID] end,
-                function(v) LegacyVendorDB.itemTypes[typeID] = v end)
-            table.insert(detailFrames, cb)
-        end
-    end
-    Flush2Col()
-
-    yOffset = yOffset - 8
-    local craftingLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    craftingLabel:SetPoint("TOPLEFT", 10, yOffset)
-    craftingLabel:SetText("|cFFFFD100Crafting & Profession Items|r  |cFF888888(off by default — protect your mats!)|r")
-    table.insert(detailFrames, craftingLabel)
-    yOffset = yOffset - 20
-
-    local craftingTypeOrder = {3, 5, 7, 9}
-    for _, typeID in ipairs(craftingTypeOrder) do
-        local itemType = addon.ITEM_TYPES[typeID]
-        if itemType then
-            local cb = CreateCheckbox2Col(content, itemType.name, "Sell " .. itemType.name .. " (off by default).",
-                function() return LegacyVendorDB.itemTypes[typeID] end,
-                function(v) LegacyVendorDB.itemTypes[typeID] = v end)
-            table.insert(detailFrames, cb)
-        end
-    end
-    Flush2Col()
+    yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames)
 
     AddSep()
 
