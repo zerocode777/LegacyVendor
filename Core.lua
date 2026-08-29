@@ -481,7 +481,15 @@ end
 
 -- Get item source type - returns: "consumable", "dungeon", "raid", "outdoor", "profession", "vendor", "pvp", "reputation", "housing", "unknown"
 -- Uses C_ItemSourceInfo API on Retail, falls back to heuristics on Classic
-local function GetItemSource(itemID, bag, slot)
+-- An item's source bucket is an intrinsic property of the item, so it cannot change
+-- during a session - itemID is a safe cache key with no invalidation needed. This
+-- matters because the fallback path below runs a per-item tooltip scan, which is by
+-- far the most expensive call in a bag scan; without this, rescanning on every bag
+-- event would be genuinely heavy.
+local itemSourceCache = {}
+addon.itemSourceCache = itemSourceCache
+
+local function GetItemSourceUncached(itemID, bag, slot)
     if not itemID then return "unknown" end
 
     local itemInfo
@@ -583,6 +591,27 @@ local function GetItemSource(itemID, bag, slot)
     
     -- Default to unknown if we can't determine source
     return "unknown"
+end
+
+local function GetItemSource(itemID, bag, slot)
+    if not itemID then return "unknown" end
+
+    local cached = itemSourceCache[itemID]
+    if cached ~= nil then
+        return cached
+    end
+
+    local source = GetItemSourceUncached(itemID, bag, slot)
+
+    -- Only cache once the item's info is actually available. GetItemInfo returns nil
+    -- for an uncached item, which would otherwise let a premature "unknown" stick
+    -- permanently for the rest of the session.
+    local infoReady = C_Item.GetItemInfo and C_Item.GetItemInfo(itemID) or GetItemInfo(itemID)
+    if infoReady then
+        itemSourceCache[itemID] = source
+    end
+
+    return source
 end
 
 -- Legacy function for backwards compatibility
@@ -898,11 +927,15 @@ local function ShouldSellItem(bag, slot)
     return true, itemLink, itemCount, sellPrice * itemCount
 end
 
--- Scan bags for items to sell
-local function ScanBags()
-    itemsToSell = {}
-    totalGoldEarned = 0
-    
+-- Pure bag scan: builds a FRESH list and total, touching no module state.
+-- Everything that only needs to know "what would sell right now" (the Sell (N)
+-- button, /lv scan, the config panel) must use this rather than ScanBags(), because
+-- ScanBags() overwrites the live sell queue - see CountSellable below.
+local function CollectSellableItems()
+    local items = {}
+    local goldTotal = 0
+    local limit = (LegacyVendorDB and LegacyVendorDB.maxSellPerVisit) or math.huge
+
     -- NUM_BAG_SLOTS is typically 4, plus bag 0 (backpack)
     for bag = 0, NUM_BAG_SLOTS do
         local numSlots = C_Container.GetContainerNumSlots(bag)
@@ -912,26 +945,44 @@ local function ScanBags()
                 if LegacyVendorDB and LegacyVendorDB.debug then
                     DebugPrint("ScanBags found:", itemLink, "bag=", bag, "slot=", slot)
                 end
-                table.insert(itemsToSell, {
+                items[#items + 1] = {
                     bag = bag,
                     slot = slot,
                     link = itemLink,
                     count = count,
                     price = price or 0
-                })
-                totalGoldEarned = totalGoldEarned + (price or 0)
-                
+                }
+                goldTotal = goldTotal + (price or 0)
+
                 -- Respect max sell limit
-                if #itemsToSell >= LegacyVendorDB.maxSellPerVisit then
+                if #items >= limit then
                     break
                 end
             end
         end
-        if #itemsToSell >= LegacyVendorDB.maxSellPerVisit then
+        if #items >= limit then
             break
         end
     end
-    
+
+    return items, goldTotal
+end
+
+-- Read-only count for UI. Safe to call at any time, including mid-sell, because it
+-- never touches itemsToSell / totalGoldEarned.
+local function CountSellable()
+    local items, goldTotal = CollectSellableItems()
+    return #items, goldTotal, items
+end
+addon.CountSellable = CountSellable
+
+-- Builds the actual sell queue. Only the selling flow may call this: it deliberately
+-- replaces itemsToSell / totalGoldEarned, so calling it while a sale is in progress
+-- would discard the queue being consumed and reset the running gold total.
+local function ScanBags()
+    local items, goldTotal = CollectSellableItems()
+    itemsToSell = items
+    totalGoldEarned = goldTotal
     return itemsToSell
 end
 
@@ -2340,7 +2391,7 @@ local function OnEvent(self, event, ...)
             else
                 -- Just scan and notify user
                 C_Timer.After(0.3, function()
-                    local items = ScanBags()
+                    local _, _, items = CountSellable()
                     if #items > 0 then
                         Print(string.format("Found %d legacy item(s) to sell. Click the [Sell Legacy] button or use /lv sell", #items))
                     end
@@ -2360,8 +2411,13 @@ local function OnEvent(self, event, ...)
         end
 
     elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" then
-        if LegacyVendorDB and LegacyVendorDB.enabled and MerchantFrame and MerchantFrame:IsShown() then
-            addon.UpdateMerchantButton()
+        local merchantShown = MerchantFrame and MerchantFrame:IsShown()
+        if LegacyVendorDB and LegacyVendorDB.debug then
+            DebugPrint("Bag event:", event, "enabled=", tostring(LegacyVendorDB and LegacyVendorDB.enabled),
+                "merchantShown=", tostring(merchantShown))
+        end
+        if LegacyVendorDB and LegacyVendorDB.enabled and merchantShown then
+            addon.ScheduleMerchantButtonUpdate()
             addon.ScheduleHighlightUpdate()
         end
     end
@@ -2412,21 +2468,50 @@ function addon.UpdateMerchantButton()
     if not addon.sellButton then
         CreateSellButton()
     end
-    
+
     if not addon.sellButton then return end
-    
-    -- Update count and show
-    local items = ScanBags()
-    local count = #items
+
+    -- While a sale is running, the button reflects what's left in the queue being
+    -- consumed rather than a fresh scan - a rescan mid-sale would race the sell loop
+    -- and can briefly disagree with it while items are still locked/in flight.
+    local count
+    if isSelling then
+        count = #itemsToSell
+    else
+        -- Read-only count: must NOT be ScanBags(), which would clobber the sell queue.
+        local startTime = LegacyVendorDB and LegacyVendorDB.debug and debugprofilestop() or nil
+        count = CountSellable()
+        if startTime then
+            DebugPrint(string.format("CountSellable took %.2f ms (%d sellable)", debugprofilestop() - startTime, count))
+        end
+    end
+
     addon.sellButton:SetText(string.format("Sell (%d)", count))
-    
+
     if count > 0 then
         addon.sellButton:Enable()
     else
         addon.sellButton:Disable()
     end
-    
+
     addon.sellButton:Show()
+end
+
+-- BAG_UPDATE fires once per bag, so a single vendored item can emit several events
+-- back to back. Coalesce them into one recount so the button updates immediately to
+-- a human without rescanning bags several times per action.
+local merchantButtonUpdatePending = false
+function addon.ScheduleMerchantButtonUpdate()
+    if merchantButtonUpdatePending then
+        return
+    end
+    merchantButtonUpdatePending = true
+    C_Timer.After(0.05, function()
+        merchantButtonUpdatePending = false
+        if LegacyVendorDB and LegacyVendorDB.enabled and MerchantFrame and MerchantFrame:IsShown() then
+            addon.UpdateMerchantButton()
+        end
+    end)
 end
 
 -- Register events
@@ -2483,11 +2568,11 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         end
         
     elseif msg == "scan" then
-        local items = ScanBags()
+        local _, scanGold, items = CountSellable()
         if #items == 0 then
             Print("No legacy BoP items found to sell.")
         else
-            Print(string.format("Found %d item(s) worth approximately %s:", #items, FormatMoney(totalGoldEarned)))
+            Print(string.format("Found %d item(s) worth approximately %s:", #items, FormatMoney(scanGold)))
             for i, item in ipairs(items) do
                 if i <= 10 then -- Limit display to 10 items
                     print("  " .. (item.link or "Unknown") .. " - " .. FormatMoney(item.price))
