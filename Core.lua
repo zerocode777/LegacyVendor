@@ -2193,95 +2193,83 @@ local function UpdateBagHighlights()
 end
 
 UpdateBagHighlightsBody = function()
-    -- Custom UI direct path: evaluate custom bag slot buttons first (ElvUI, WindTools wrappers).
-    local customButtons, customSource, customScanned = CollectCustomBagButtons()
-    local customApplied = 0
-    local fallbackApplied = 0
-    local firstFallbackTargetLogged = false
+    -- The sellable list is AUTHORITATIVE. Previously this walked the bag addon's
+    -- buttons and asked "should this one sell?", while the Sell (N) button and the
+    -- chat summary walked bag slots - two different traversals that could disagree,
+    -- which is exactly how you got "Sell (6)" next to two highlighted items.
+    -- Driving both from the same list makes them agree by construction.
+    local _, _, items = CountSellable()
 
-    if LegacyVendorDB and LegacyVendorDB.debug then
-        DebugPrint("Custom bag scan:", customSource, "scanned=", customScanned, "buttons=", #customButtons, "ElvUILoaded=", tostring(IsAddonLoadedSafe("ElvUI")), "WindToolsLoaded=", tostring(IsAddonLoadedSafe("ElvUI_WindTools")))
-    end
-
-    if #customButtons > 0 then
-        for _, btn in ipairs(customButtons) do
-            local b, s = GetButtonBagAndSlot(btn)
-            if b ~= nil and s ~= nil and s > 0 then
-                if IsValidButtonCandidate(btn, b, s) and ShouldSellItem(b, s) then
-                    local shown = (btn.IsShown and btn:IsShown()) or (btn.IsVisible and btn:IsVisible())
-                    if shown then
-                        -- Isolate each button: an unrelated addon's hook on a shared widget
-                        -- method (SetVertexColor, etc.) can throw and must not abort the
-                        -- rest of the batch.
-                        local applyOk, applyErr = pcall(ApplyHighlight, btn)
-                        if applyOk then
-                            customApplied = customApplied + 1
-                        elseif LegacyVendorDB and LegacyVendorDB.debug then
-                            DebugPrint("ApplyHighlight error (custom):", tostring(applyErr))
-                        end
-                    end
-                end
-            end
-        end
-
+    if #items == 0 then
         if LegacyVendorDB and LegacyVendorDB.debug then
-            DebugPrint("Custom bag path:", customSource, "scanned=", customScanned, "applied=", customApplied, "ElvUILoaded=", tostring(IsAddonLoadedSafe("ElvUI")), "WindToolsLoaded=", tostring(IsAddonLoadedSafe("ElvUI_WindTools")))
+            DebugPrint("Highlight pass: nothing sellable.")
         end
-
-        -- We found the addon's own bag button pool (a cheap, scoped scan) - trust it
-        -- completely and never fall through to the expensive whole-UI scan below, even
-        -- if nothing happened to be sellable this particular pass.
         return
     end
 
-    -- Built at most once per pass, only if some item actually needs the expensive
-    -- whole-UI walk - avoids redoing it per item (was up to ~20x per pass before).
+    -- Index whatever buttons the active bag addon exposes by bag:slot, so the common
+    -- case is a table lookup per item rather than a UI walk.
+    local buttonBySlot = {}
+    local customButtons, customSource, customScanned = CollectCustomBagButtons()
+    for _, btn in ipairs(customButtons) do
+        local b, sl = GetButtonBagAndSlot(btn)
+        if b ~= nil and sl ~= nil and sl > 0 then
+            local key = b .. ":" .. sl
+            -- Keep the first visible button for a slot; pooled/hidden duplicates
+            -- exist in several bag addons and must not shadow the real one.
+            local shown = (btn.IsShown and btn:IsShown()) or (btn.IsVisible and btn:IsVisible())
+            if shown and not buttonBySlot[key] then
+                buttonBySlot[key] = btn
+            end
+        end
+    end
+
+    local applied, missing = 0, 0
     local globalEnumList, legacyNameList
 
-    for bag = 0, NUM_BAG_SLOTS do
-        local numSlots = C_Container.GetContainerNumSlots(bag)
-        for slot = 1, numSlots do
-            local shouldSell = ShouldSellItem(bag, slot)
-            if shouldSell then
-                if not globalEnumList then
-                    globalEnumList = CollectGlobalEnumCandidates()
-                    legacyNameList = CollectLegacyNameCandidates()
-                end
-                -- FindButtonForBagSlot walks every frame in the UI (including other
-                -- addons' buttons); an unrelated hook on one of them can throw here too,
-                -- so isolate it the same way ApplyHighlight is isolated below.
-                local findOk, button = pcall(FindButtonForBagSlot, bag, slot, globalEnumList, legacyNameList)
-                if not findOk then
+    for _, item in ipairs(items) do
+        local button = buttonBySlot[item.bag .. ":" .. item.slot]
+
+        -- No bag-addon button for this slot: fall back to the generic search, but
+        -- only build the expensive whole-UI lists if we actually get here.
+        if not button then
+            if not globalEnumList and #customButtons == 0 then
+                globalEnumList = CollectGlobalEnumCandidates()
+                legacyNameList = CollectLegacyNameCandidates()
+            end
+            if globalEnumList then
+                local ok, found = pcall(FindButtonForBagSlot, item.bag, item.slot, globalEnumList, legacyNameList)
+                button = ok and found or nil
+            end
+        end
+
+        if button then
+            local shown = (button.IsShown and button:IsShown()) or (button.IsVisible and button:IsVisible())
+            if shown then
+                local ok, err = pcall(ApplyHighlight, button)
+                if ok then
+                    applied = applied + 1
+                else
+                    missing = missing + 1
                     if LegacyVendorDB and LegacyVendorDB.debug then
-                        DebugPrint("FindButtonForBagSlot error:", "bag=", bag, "slot=", slot, tostring(button))
-                    end
-                    button = nil
-                end
-                if LegacyVendorDB and LegacyVendorDB.debug and not firstFallbackTargetLogged then
-                    local btnName = (button and button.GetName and button:GetName()) or "<anon>"
-                    local btnType = (button and button.GetObjectType and button:GetObjectType()) or "<nil>"
-                    local mb, ms = nil, nil
-                    if button then
-                        mb, ms = GetButtonBagAndSlot(button)
-                    end
-                    local hasIcon = button and (button.Icon or button.icon) and true or false
-                    DebugPrint("First fallback target:", "slot=", bag, slot, "name=", tostring(btnName), "type=", tostring(btnType), "mapped=", tostring(mb), tostring(ms), "icon=", tostring(hasIcon))
-                    firstFallbackTargetLogged = true
-                end
-                if button and ((button.IsShown and button:IsShown()) or (button.IsVisible and button:IsVisible())) then
-                    local applyOk, applyErr = pcall(ApplyHighlight, button)
-                    if applyOk then
-                        fallbackApplied = fallbackApplied + 1
-                    elseif LegacyVendorDB and LegacyVendorDB.debug then
-                        DebugPrint("ApplyHighlight error (fallback):", "bag=", bag, "slot=", slot, tostring(applyErr))
+                        DebugPrint("ApplyHighlight error:", "bag=", item.bag, "slot=", item.slot, tostring(err))
                     end
                 end
+            else
+                missing = missing + 1
+            end
+        else
+            missing = missing + 1
+            if LegacyVendorDB and LegacyVendorDB.debug then
+                DebugPrint("No button found for sellable slot:", "bag=", item.bag, "slot=", item.slot,
+                    (item.link or "?"))
             end
         end
     end
 
     if LegacyVendorDB and LegacyVendorDB.debug then
-        DebugPrint("Fallback bag path applied=", fallbackApplied)
+        DebugPrint(("Highlight pass: %d sellable, %d highlighted, %d without a visible button (source=%s, buttons=%d)")
+            :format(#items, applied, missing, tostring(customSource), customScanned or 0))
     end
 end
 
