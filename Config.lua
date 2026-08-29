@@ -312,16 +312,27 @@ local function CreateSimpleConfig()
             countPending = true
             C_Timer.After(0.05, function()
                 countPending = false
-                if not configFrame:IsShown() then return end
+
+                -- Everything a filter change affects, refreshed from one place:
+                -- the panel's own count, the merchant's Sell (N) button, and the
+                -- bag highlights. Previously only the first of these updated, so
+                -- the button kept a stale number until the vendor was reopened.
                 if addon.CountSellable then
                     local count, gold = addon.CountSellable()
-                    if count == 0 then
-                        topSummaryFrame:SetCount("Nothing in your bags matches right now.", true)
-                    else
-                        topSummaryFrame:SetCount(string.format(
-                            "%d item%s in your bags would sell right now  (about %s)",
-                            count, count == 1 and "" or "s", ShortMoney(gold)), false)
+                    if configFrame:IsShown() then
+                        if count == 0 then
+                            topSummaryFrame:SetCount("Nothing in your bags matches right now.", true)
+                        else
+                            topSummaryFrame:SetCount(string.format(
+                                "%d item%s in your bags would sell right now  (about %s)",
+                                count, count == 1 and "" or "s", ShortMoney(gold)), false)
+                        end
                     end
+                end
+
+                RefreshButton()
+                if addon.ScheduleHighlightUpdate then
+                    addon.ScheduleHighlightUpdate()
                 end
             end)
         end
@@ -779,6 +790,11 @@ local function CreateSimpleConfig()
 
         yOffset = yOffset - 80
     end
+
+    MakeBtn(26, "Manage never-sell list", function()
+        if addon.Exclusions then addon.Exclusions.Open() end
+    end)
+    yOffset = yOffset - 30
 
     AddSubLabel("TROUBLESHOOTING")
 

@@ -256,6 +256,14 @@ function Wizard.RefreshLive()
     local f = Wizard.frame
     if not f then return end
     f.Live:SetSentence(addon.BuildFilterSentence(LegacyVendorDB))
+
+    -- Keep the merchant button and bag highlights in step with the flow, so a
+    -- choice made here is reflected everywhere immediately.
+    if addon.UpdateMerchantButton and MerchantFrame and MerchantFrame:IsShown() then
+        addon.UpdateMerchantButton()
+    end
+    if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+
     if addon.CountSellable then
         local count, gold = addon.CountSellable()
         if count == 0 then

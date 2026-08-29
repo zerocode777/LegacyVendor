@@ -2734,6 +2734,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv reset - Reset settings to default")
         Print("  /lv debug - Toggle debug mode")
         Print("  /lv setup - Guided setup: three questions instead of forty options")
+        Print("  /lv protected - Manage the never-sell list")
         Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
@@ -2795,7 +2796,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
                 end
             end
         else
-            Print("Hover over an item and use /lv exclude to toggle exclusion.")
+            Print("Hover over an item and use /lv exclude to toggle it, or /lv protected to manage the list.")
         end
         
     elseif msg == "reset" then
@@ -2805,6 +2806,9 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "protected" or msg == "exclusions" then
+        if addon.Exclusions then addon.Exclusions.Open() end
 
     elseif msg == "setup" or msg == "wizard" then
         if addon.Wizard then addon.Wizard.Open() end
