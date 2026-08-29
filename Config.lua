@@ -733,70 +733,96 @@ local function CreateSimpleConfig()
     AddSep()
 
     -- ==================================================
-    -- EXPANSION FILTERS (plain checklist — no badges)
+    -- PROGRESSIVE FILTER FLOW
+    -- Sections reveal one at a time as the previous question is answered, and
+    -- branch: picking "Gear" is what makes the gear-slot list appear. Showing all
+    -- six groups at once is what made this read as a settings dump rather than a
+    -- decision you walk through.
     -- ==================================================
-    AddHeader("|cFFFFD100Which expansions?|r",
-        "Click an expansion to sell its items. This is the main filter - everything below narrows it further.", "expansions")
+    local AnyTrue = addon.Sections.AnyTrue
+
+    -- Muted "you are not there yet" line shown in place of the sections still ahead.
+    local function AddGateHint(text)
+        local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        fs:SetPoint("TOPLEFT", 44, yOffset)
+        fs:SetPoint("TOPRIGHT", content, "TOPRIGHT", -14, yOffset)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+        fs:SetText("|cFF7F7F7F" .. text .. "|r")
+        yOffset = yOffset - 34
+    end
+
+    -- STEP 1: expansions. Always visible - everything else depends on it.
+    AddHeader("|cFFFFD100Step 1 - Which expansions?|r",
+        "Everything below narrows this. Current content is always protected.", "expansions")
     SetTooltipScope("global")
 
     yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, RefreshLiveSummary, nil, RefreshConfigFrame)
 
-    AddSep()
+    local haveExpansion = AnyTrue(LegacyVendorDB.expansions)
 
-    -- ==================================================
-    -- RARITY FILTERS (global)
-    -- ==================================================
-    AddHeader("|cFFFFD100Which rarities?|r",
-        "An item must match one of these to sell.", "rarity")
-    SetTooltipScope("global")
+    if not haveExpansion then
+        AddGateHint("Pick at least one expansion above to carry on.")
 
-    yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+    elseif LegacyVendorDB.sellMode ~= "matching" then
+        -- In "sell everything" mode the detail filters genuinely do not run, so
+        -- rendering them greyed-out was just noise. Say so instead.
+        AddGateHint("\"Sell EVERYTHING from enabled expansions\" is on, so the detailed "
+            .. "filters are not used. Switch to \"Only sell items MATCHING my filters\" "
+            .. "in General Settings above to walk through them.")
 
-    AddSep()
+    else
+        AddSep()
 
-    -- ==================================================
-    -- BIND TYPE FILTERS (global)
-    -- ==================================================
-    AddHeader("|cFFFFD100Which bind types?|r",
-        "An item must match one of these to sell.", "bind")
-    SetTooltipScope("global")
+        -- STEP 2: the branch point.
+        AddHeader("|cFFFFD100Step 2 - What kinds of items?|r",
+            "Pick one or both. Your choice decides which lists appear next.", "types")
+        yOffset = addon.Sections.RenderItemKinds(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
-    yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+        local wantGear = AnyTrue(LegacyVendorDB.equipSlots)
+        local wantOther = AnyTrue(LegacyVendorDB.itemTypes)
 
-    AddSep()
+        if not (wantGear or wantOther) then
+            AddGateHint("Choose gear, other items, or both to carry on.")
+        else
+            -- STEP 3a: only when gear is in scope.
+            if wantGear then
+                AddSep()
+                AddHeader("|cFFFFD100Step 3 - Which gear slots?|r",
+                    "Equippable items must match one of these.", "slots")
+                yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+            end
 
-    -- ==================================================
-    -- EQUIPMENT SLOT FILTERS (global)
-    -- ==================================================
-    AddHeader("|cFFFFD100Which gear slots?|r",
-        "Equippable items must match one of these slots.", "slots")
-    SetTooltipScope("global")
+            -- STEP 3b: only when non-gear is in scope.
+            if wantOther then
+                AddSep()
+                AddHeader("|cFFFFD100Step " .. (wantGear and "3b" or "3") .. " - Which other items?|r",
+                    "Crafting mats and quest items stay off until you pick them here.", "types")
+                yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+            end
 
-    yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+            AddSep()
 
-    AddSep()
+            -- STEP 4: quality.
+            AddHeader("|cFFFFD100Step 4 - Which rarities?|r",
+                "An item must match one of these to sell.", "rarity")
+            yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
-    -- ==================================================
-    -- ITEM TYPE FILTERS (global)
-    -- ==================================================
-    AddHeader("|cFFFFD100Which non-gear items?|r",
-        "Crafting mats and reagents are off by default - turn them on deliberately.", "types")
-    SetTooltipScope("global")
+            AddSep()
 
-    yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+            -- STEP 5: bind state.
+            AddHeader("|cFFFFD100Step 5 - Which bind types?|r",
+                "An item must match one of these to sell.", "bind")
+            yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
-    AddSep()
+            AddSep()
 
-    -- ==================================================
-    -- SOURCE SKIP-LIST (global) - exclusions come last
-    -- The inclusive filters above decide what CAN sell; this subtracts from that
-    -- result, so it reads in the same order as the live sentence at the top.
-    -- ==================================================
-    AddHeader("|cFFFFD100...except never from|r  |cFFFF9944(active = protected)|r",
-        "Anything from a highlighted source is skipped, even if it matched everything above.", "sources")
-    SetTooltipScope("global")
-
-    yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+            -- STEP 6: exclusions last - they subtract from everything decided above.
+            AddHeader("|cFFFFD100Step 6 - ...except never from|r  |cFFFF9944(optional)|r",
+                "Anything from a highlighted source is skipped, even if it matched every step above.", "sources")
+            yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+        end
+    end
 
     AddSep()
 

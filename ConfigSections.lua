@@ -229,6 +229,54 @@ function Sections.RenderItemTypes(content, yOffset, onChange, registry, rebuild)
         onChange, registry, rebuild)
 end
 
+-- True if any value in the table is truthy. Used to decide which step of the
+-- progressive flow the user has reached.
+function Sections.AnyTrue(t)
+    if type(t) ~= "table" then return false end
+    for _, v in pairs(t) do
+        if v then return true end
+    end
+    return false
+end
+
+-- Step 2 of the flow: the branch point. Choosing "Gear" is what reveals the gear
+-- slot section below it; choosing "Other items" reveals the item type section.
+-- Neither exists as a real db field - both are derived from whether their
+-- underlying group has anything enabled, so there is no extra state to migrate.
+function Sections.RenderItemKinds(content, yOffset, onChange, registry, rebuild)
+    if not ensureRefs() then return yOffset end
+
+    local specs = {
+        { key = "gear",  label = "Gear  (armour & weapons)",
+          icon = V.HeaderIcon.slots,
+          tooltip = "Sell equippable items. Reveals the gear slot list." },
+        { key = "other", label = "Other items  (consumables, mats, misc)",
+          icon = V.HeaderIcon.types,
+          tooltip = "Sell non-equippable items. Reveals the item type list." },
+    }
+
+    local function get(key)
+        if key == "gear" then return Sections.AnyTrue(LegacyVendorDB.equipSlots) end
+        return Sections.AnyTrue(LegacyVendorDB.itemTypes)
+    end
+
+    local function set(key, v)
+        if key == "gear" then
+            for k in pairs(addon.EQUIP_SLOTS) do LegacyVendorDB.equipSlots[k] = v end
+        else
+            -- Turning this on enables only the safe subset. Crafting mats and quest
+            -- items stay off until deliberately picked in the revealed section.
+            for id in pairs(addon.ITEM_TYPES) do LegacyVendorDB.itemTypes[id] = false end
+            if v then
+                LegacyVendorDB.itemTypes[0] = true   -- consumables
+                LegacyVendorDB.itemTypes[15] = true  -- miscellaneous
+            end
+        end
+    end
+
+    return Sections.RenderChipGroup(content, yOffset, specs, get, set, onChange, registry, rebuild)
+end
+
 -- ==========================================
 -- PRESETS
 -- ==========================================
