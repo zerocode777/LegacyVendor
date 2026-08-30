@@ -964,8 +964,7 @@ local function CreateSimpleConfig()
         if #kept == 0 then
             fs:SetText("|cFFCC8844Nothing is protected. Every item matching the steps below will sell.|r")
         else
-            fs:SetText("|cFF88CC88- " .. table.concat(kept, "
-- ") .. "|r")
+            fs:SetText("|cFF88CC88- " .. table.concat(kept, "\n- ") .. "|r")
         end
         yOffset = yOffset - (fs:GetStringHeight() or 14) - 12
 
