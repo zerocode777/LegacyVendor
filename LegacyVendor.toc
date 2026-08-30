@@ -19,4 +19,5 @@ ConfigSections.lua
 ConfigWizard.lua
 ConfigExclusions.lua
 ConfigShare.lua
+ConfigProfiles.lua
 Config.lua

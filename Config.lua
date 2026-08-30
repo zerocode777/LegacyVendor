@@ -802,6 +802,11 @@ local function CreateSimpleConfig()
         yOffset = yOffset - 80
     end
 
+    MakeBtn(26, "Filter profiles", function()
+        if addon.Profiles then addon.Profiles.Open() end
+    end)
+    yOffset = yOffset - 30
+
     MakeBtn(26, "Share / import filters", function()
         if addon.Share then addon.Share.Open("export") end
     end)

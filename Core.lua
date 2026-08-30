@@ -224,6 +224,9 @@ local defaults = {
     showTooltipInfo = true, -- Add a "will sell / keeping - why" line to item tooltips
     stats = { totalCopper = 0, totalItems = 0, byExpansion = {}, firstSale = nil, lastSale = nil },
     autoConfirmTradeTimer = false, -- Auto-accept "will become non-tradeable" prompts while selling
+    profiles = {},      -- name -> { config = <share string>, saved = <time> }
+    charProfiles = {},  -- "Name-Realm" -> profile name, loaded automatically at login
+    activeProfile = nil,
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -2786,6 +2789,12 @@ local function OnEvent(self, event, ...)
             if addon.MigrateDB then addon.MigrateDB(LegacyVendorDB) end
             EnsureExpansionProfiles(LegacyVendorDB)
             
+            -- A character bound to a profile gets it applied before anything is
+            -- scanned, so the very first vendor visit already uses the right rules.
+            if addon.Profiles and addon.Profiles.ApplyForCharacter then
+                pcall(addon.Profiles.ApplyForCharacter)
+            end
+
             -- Show loaded message with version info
             local versionInfo = addon.compatInfo or "Retail"
             Print("Loaded (" .. versionInfo .. "). Type /lv for options.")
@@ -3082,6 +3091,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv find - Scroll your bags to the next matching item")
         Print("  /lv stats - How much gold you have reclaimed, by expansion")
         Print("  /lv export | /lv import - Share your filter setup as a string")
+        Print("  /lv profiles - Save and switch between named filter setups")
         Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
@@ -3153,6 +3163,9 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "profiles" or msg == "profile" then
+        if addon.Profiles then addon.Profiles.Open() end
 
     elseif msg == "export" then
         if addon.Share then addon.Share.Open("export") end
