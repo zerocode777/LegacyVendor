@@ -200,10 +200,23 @@ function Share.Open(mode)
         edit:SetMultiLine(true)
         edit:SetFontObject(ChatFontNormal)
         edit:SetWidth(500)
+        -- A multi-line EditBox inside a ScrollFrame defaults to zero height, which
+        -- makes it an unclickable target - the export box only appeared to work
+        -- because it was focused programmatically. Give it a real height and let the
+        -- scroll frame handle overflow.
+        edit:SetHeight(180)
+        edit:EnableMouse(true)
         edit:SetAutoFocus(false)
         edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         sf:SetScrollChild(edit)
         f.edit = edit
+
+        -- Clicking anywhere in the empty area below the text should focus the box
+        -- too, rather than only the single line of text itself.
+        local catcher = CreateFrame("Button", nil, sf)
+        catcher:SetAllPoints(sf)
+        catcher:SetFrameLevel(edit:GetFrameLevel() - 1)
+        catcher:SetScript("OnClick", function() edit:SetFocus() end)
 
         f.action = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         f.action:SetSize(150, 24)
@@ -222,9 +235,10 @@ function Share.Open(mode)
 
     if mode == "import" then
         f.title:SetText("Import Filter Settings")
-        f.hint:SetText("Paste a LegacyVendor string below and press Import. This replaces your "
-            .. "current filters, so export your own first if you want to keep them.")
+        f.hint:SetText("Click the box, paste with Ctrl+V, then press Import. This replaces "
+            .. "your current filters, so export your own first if you want to keep them.")
         f.edit:SetText("")
+        f.edit:SetFocus()
         f.action:SetText("Import")
         f.action:SetScript("OnClick", function()
             local parsed, err = Share.Parse(f.edit:GetText())
