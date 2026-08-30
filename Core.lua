@@ -237,7 +237,10 @@ local defaults = {
     highlightItems = true, -- Highlight sellable items in bags
     highlightColor = { r = 0.68, g = 0.45, b = 1.0, a = 0.85 }, -- Light purple glow by default
     highlightStyle = "pulse", -- Visual style id, see addon.HIGHLIGHT_STYLES
-    protectUncollected = true, -- Never sell uncollected appearances/mounts/toys/pets
+    protectUncollected = true, -- Never sell uncollected mounts/toys/pets (must be used to learn)
+    -- Off by default: vendoring an item binds it, which COLLECTS the appearance, so
+    -- blocking the sale protects nothing. Kept for anyone who prefers the belt.
+    protectUncollectedAppearances = false,
     showTooltipInfo = true, -- Add a "will sell / keeping - why" line to item tooltips
     stats = { totalCopper = 0, totalItems = 0, byExpansion = {}, firstSale = nil, lastSale = nil },
     autoConfirmTradeTimer = false, -- Auto-accept "will become non-tradeable" prompts while selling
@@ -774,6 +777,7 @@ local collectibleCache = {}
 
 local function ResetCollectibleCache()
     wipe(collectibleCache)
+    if addon.ResetAppearanceCache then addon.ResetAppearanceCache() end
 end
 addon.ResetCollectibleCache = ResetCollectibleCache
 
@@ -830,6 +834,8 @@ local function IsUncollectedPet(itemID)
 end
 
 -- Returns reason string when the item is an uncollected collectible, else nil.
+-- Mounts, toys and pets have to be USED to be learned, so vendoring one you have
+-- not learned genuinely loses it. This guard is correct and on by default.
 local function GetCollectibleProtection(itemID, itemLink)
     if not itemID then return nil end
 
@@ -839,9 +845,7 @@ local function GetCollectibleProtection(itemID, itemLink)
     end
 
     local reason = nil
-    if IsUncollectedAppearance(itemLink) then
-        reason = "uncollected appearance"
-    elseif IsUncollectedToy(itemID) then
+    if IsUncollectedToy(itemID) then
         reason = "uncollected toy"
     elseif IsUncollectedMount(itemID) then
         reason = "uncollected mount"
@@ -853,6 +857,38 @@ local function GetCollectibleProtection(itemID, itemLink)
     return reason
 end
 addon.GetCollectibleProtection = GetCollectibleProtection
+
+-- Appearances are a different case, and treating them like the above was a
+-- mistake. An item is added to your collection as soon as it becomes Soulbound or
+-- Warbound - which means:
+--
+--   * a soulbound drop was already collected when you looted it, so this never
+--     fires for it anyway, and
+--   * selling a BoE binds it, so vendoring is itself a way to COLLECT the
+--     appearance rather than a way to lose it.
+--
+-- So blocking the sale protects nothing and just leaves clutter in the bag. Kept
+-- as an option for anyone who would rather not rely on that, but off by default.
+local appearanceCache = {}
+
+local function ResetAppearanceCache()
+    wipe(appearanceCache)
+end
+
+local function GetAppearanceProtection(itemID, itemLink)
+    if not itemID or not itemLink then return nil end
+
+    local cached = appearanceCache[itemID]
+    if cached ~= nil then
+        return cached or nil
+    end
+
+    local reason = IsUncollectedAppearance(itemLink) and "uncollected appearance" or nil
+    appearanceCache[itemID] = reason or false
+    return reason
+end
+addon.GetAppearanceProtection = GetAppearanceProtection
+addon.ResetAppearanceCache = ResetAppearanceCache
 
 -- Check if item should be sold
 local function ShouldSellItem(bag, slot)
@@ -891,6 +927,15 @@ local function ShouldSellItem(bag, slot)
         if collectibleReason then
             DebugPrint("Protected (" .. collectibleReason .. "):", itemLink)
             return false, collectibleReason
+        end
+    end
+
+    -- Separate, and off by default - see GetAppearanceProtection for why.
+    if db.protectUncollectedAppearances then
+        local appearanceReason = GetAppearanceProtection(itemID, itemLink)
+        if appearanceReason then
+            DebugPrint("Protected (" .. appearanceReason .. "):", itemLink)
+            return false, appearanceReason
         end
     end
 

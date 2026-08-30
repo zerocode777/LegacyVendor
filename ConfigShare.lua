@@ -58,6 +58,7 @@ function Share.Export(db)
     if db.sellWarbound then flags[#flags + 1] = "warband" end
     if db.sellGray then flags[#flags + 1] = "gray" end
     if db.protectUncollected ~= false then flags[#flags + 1] = "protect" end
+    if db.protectUncollectedAppearances then flags[#flags + 1] = "protectappearance" end
     if db.strictSeasonalProtection ~= false then flags[#flags + 1] = "strict" end
     if db.onlySellLowerIlvl then flags[#flags + 1] = "lowerilvl" end
     fields[#fields + 1] = "F:" .. table.concat(flags, ",")
@@ -166,6 +167,11 @@ function Share.Apply(parsed)
     -- importer can still turn it off themselves, deliberately, in Settings.
     db.protectUncollected = true
     db.strictSeasonalProtection = true
+    -- Appearance protection is the one guard an import may switch ON, since it only
+    -- ever makes the config more conservative than the importer's current setting.
+    if parsed.flags.protectappearance then
+        db.protectUncollectedAppearances = true
+    end
 
     -- The item-level ceiling travels with a shared config, but an imported string
     -- can only ever tighten it, never raise or disable someone's existing limit.

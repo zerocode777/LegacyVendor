@@ -56,7 +56,7 @@ Pick something subtle that sits quietly behind a busy bag addon, or something lo
 
 These run **before** every filter and override all of them. They're listed at the top of the filter flow so you always know they're on.
 
-- **Uncollected appearances, mounts, toys and pets are never sold.** Appearances only count when your character could actually learn them, so this doesn't quietly stop the addon selling other armour types.
+- **Uncollected mounts, toys and pets are never sold.** These have to be used before they're learned, so selling an unlearned one really does lose it. (Appearances are a separate, optional toggle — vendoring an item collects its appearance anyway, so protecting them is usually unnecessary.)
 - **An item level ceiling.** Never sell gear at or above a level you choose. This one doesn't care which expansion an item is from or where it came from — it just asks how good the item is, which makes it the most dependable guard of the lot.
 - **Current-season Mythic+ gear is hard-protected.** Legacy dungeons in the current rotation drop current-tier loot wearing an old expansion's label; that gear is never sold.
 - **Warbound items are their own category, off by default.** They're shared by every character on your account, so selling one from here removes it for all of them.

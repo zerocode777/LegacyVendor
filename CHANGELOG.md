@@ -5,6 +5,19 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-08-30
+
+### Changed
+- Appearance protection is now separate from mount/toy/pet protection, and is off by
+  default. Selling an item binds it, and binding an item adds its appearance to your
+  collection - so vendoring is a way to *collect* an appearance, not a way to lose
+  one. Blocking those sales protected nothing and just left items sitting in your
+  bags. Mounts, toys and pets still have to be used before they are learned, so
+  selling an unlearned one really does lose it: that protection is unchanged and
+  stays on.
+
+  Thanks to Fantastic-Shirt6037 on r/wowaddons for pointing this out.
+
 ## [3.0.0] - 2026-08-30
 
 The settings panel is rebuilt, selling is safer, and the addon can now explain
@@ -19,9 +32,8 @@ itself. Everything below is new unless marked otherwise.
   a dependable backstop when the game reports nothing useful about where something
   came from. It reads the item's effective level, so legacy gear scaled up by
   current-season bonuses is judged at its real strength.
-- Uncollected appearances, mounts, toys and caged pets are never sold. Appearances
-  are only protected when your character could actually learn them, so this does not
-  quietly stop the addon selling other armour types.
+- Uncollected mounts, toys and caged pets are never sold. (This also covered
+  appearances on release; see 3.0.1, which separates them.)
 - Warbound (account-bound) items are now their own category with their own toggle,
   off by default. They were previously treated as unbound.
 - A visible never-sell list (`/lv protected`). Items can be added by dragging them

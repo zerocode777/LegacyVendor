@@ -28,6 +28,7 @@ local function Snapshot(db)
         -- Every guard the flow can display or change, so Cancel really does undo
         -- everything it touched rather than only the parts added first.
         protectUncollected = db.protectUncollected,
+        protectUncollectedAppearances = db.protectUncollectedAppearances,
         strictSeasonalProtection = db.strictSeasonalProtection,
         protectHighIlvl = db.protectHighIlvl,
         highIlvlThreshold = db.highIlvlThreshold,
@@ -375,7 +376,7 @@ function Wizard.Goto(step)
 
         local protect = Track(body, CreateFrame("CheckButton", nil, body, "InterfaceOptionsCheckButtonTemplate"))
         protect:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y - 6)
-        protect.Text:SetText("Never sell uncollected appearances, mounts, toys or pets")
+        protect.Text:SetText("Never sell uncollected mounts, toys or pets")
         protect:SetChecked(LegacyVendorDB.protectUncollected ~= false)
         protect:SetScript("OnClick", function(self)
             LegacyVendorDB.protectUncollected = self:GetChecked()

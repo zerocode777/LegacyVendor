@@ -546,9 +546,9 @@ local function CreateSimpleConfig()
 
     AddSubLabel("SAFETY")
 
-    CreateCheckbox(content, "Protect uncollected appearances, mounts, toys & pets  |cFF44FF44(recommended)|r",
-        "Never sell an item that would be your only source of an appearance, mount, toy or pet. "
-        .. "Selling one of those cannot be undone.",
+    CreateCheckbox(content, "Protect uncollected mounts, toys & pets  |cFF44FF44(recommended)|r",
+        "Mounts, toys and pets have to be used before they are learned, so selling one you "
+        .. "have not learned really does lose it.",
         function() return LegacyVendorDB.protectUncollected ~= false end,
         function(v)
             LegacyVendorDB.protectUncollected = v
@@ -604,6 +604,19 @@ local function CreateSimpleConfig()
 
         yOffset = yOffset - 26
     end
+
+    CreateCheckbox(content, "Also protect uncollected appearances  |cFF888888(usually unnecessary)|r",
+        "Selling an item binds it, and binding an item adds its appearance to your collection - "
+        .. "so vendoring is itself a way to COLLECT an appearance, not a way to lose one. This is "
+        .. "off by default because blocking the sale protects nothing and just leaves the item in "
+        .. "your bag. Turn it on if you would rather not rely on that.",
+        function() return LegacyVendorDB.protectUncollectedAppearances end,
+        function(v)
+            LegacyVendorDB.protectUncollectedAppearances = v
+            if addon.ResetAppearanceCache then addon.ResetAppearanceCache() end
+            RefreshButton()
+            RefreshSummary()
+        end, true)
 
     CreateCheckbox(content, "Protect current-season Mythic+ gear  |cFF44FF44(recommended)|r",
         "Hard-protect current-season scaled legacy dungeon items. Overrides every sell filter.",

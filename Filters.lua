@@ -208,7 +208,10 @@ function addon.BuildProtectionSummary(db)
   local kept = {}
 
   if db.protectUncollected ~= false then
-    kept[#kept + 1] = "uncollected appearances, mounts, toys & pets"
+    kept[#kept + 1] = "uncollected mounts, toys & pets"
+  end
+  if db.protectUncollectedAppearances then
+    kept[#kept + 1] = "uncollected appearances"
   end
   if db.strictSeasonalProtection ~= false then
     kept[#kept + 1] = "current-season Mythic+ gear"
