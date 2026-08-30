@@ -213,6 +213,10 @@ local defaults = {
     itemTypes = {},
     excludedItems = {},
     minItemLevel = 0,
+    -- Expansion-independent safety net. Uses EFFECTIVE item level, so scaled gear is
+    -- judged on what it actually is rather than what it originally dropped as.
+    protectHighIlvl = true,
+    highIlvlThreshold = 620,
     debug = false,
     sellDelay = 0.2, -- Delay between sells to avoid throttling
     itemSources = {}, -- Source filter settings (vendor, crafted, dropped, etc.)
@@ -920,6 +924,26 @@ local function ShouldSellItem(bag, slot)
             -- the protection off, which is explicit and visible.
             DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
             return false, "current-season Mythic+ gear"
+        end
+    end
+
+    -- === HARD STOP: item level ceiling ===
+    -- Deliberately independent of expansion AND of source detection, which is what
+    -- makes it a reliable backstop: the seasonal check above has to work out which
+    -- expansion an item belongs to and where it came from, and either can fail. This
+    -- one only asks "how good is this item, right now?".
+    --
+    -- Effective item level, not the base value, so a legacy piece scaled up by
+    -- current-season bonus IDs is measured at its real strength.
+    if db.protectHighIlvl and (db.highIlvlThreshold or 0) > 0 then
+        local isGear = equipLoc and equipLoc ~= ""
+        if isGear and GetDetailedItemLevelInfo then
+            local effIlvl = GetDetailedItemLevelInfo(itemLink)
+            if effIlvl and effIlvl >= db.highIlvlThreshold then
+                DebugPrint("Item level protection:", effIlvl, ">=", db.highIlvlThreshold, itemLink)
+                return false, ("item level %d is at or above your %d limit"):format(
+                    effIlvl, db.highIlvlThreshold)
+            end
         end
     end
     

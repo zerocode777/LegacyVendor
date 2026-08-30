@@ -553,6 +553,48 @@ local function CreateSimpleConfig()
             RefreshButton()
         end, true)
 
+    CreateCheckbox(content, "Never sell gear at or above item level  |cFF44FF44(recommended)|r",
+        "A plain safety net that does not depend on working out which expansion an item "
+        .. "belongs to or where it came from - it just asks how good the item is. Uses the "
+        .. "item's effective level, so legacy gear scaled up by current-season bonuses is "
+        .. "judged at its real strength.",
+        function() return LegacyVendorDB.protectHighIlvl end,
+        function(v)
+            LegacyVendorDB.protectHighIlvl = v
+            RefreshButton()
+            RefreshSummary()
+        end, true)
+
+    -- Threshold sits on the same visual row as its checkbox.
+    do
+        local box = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+        box:SetSize(60, 20)
+        box:SetPoint("TOPLEFT", 300, yOffset + 26)
+        box:SetAutoFocus(false)
+        box:SetNumeric(true)
+        box:SetMaxLetters(4)
+        box:SetText(tostring(LegacyVendorDB.highIlvlThreshold or 620))
+
+        local function Commit(self)
+            local v = tonumber(self:GetText()) or 0
+            LegacyVendorDB.highIlvlThreshold = v
+            self:SetText(tostring(v))
+            self:ClearFocus()
+            RefreshButton()
+            RefreshSummary()
+        end
+        box:SetScript("OnEnterPressed", Commit)
+        box:SetScript("OnEditFocusLost", Commit)
+        box:SetScript("OnEscapePressed", function(self)
+            self:SetText(tostring(LegacyVendorDB.highIlvlThreshold or 620))
+            self:ClearFocus()
+        end)
+
+        local tip = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        tip:SetPoint("LEFT", box, "RIGHT", 6, 0)
+        tip:SetText("|cFF888888and above|r")
+    end
+
     CreateCheckbox(content, "Protect current-season Mythic+ gear  |cFF44FF44(recommended)|r",
         "Hard-protect current-season scaled legacy dungeon items. Overrides every sell filter.",
         function() return LegacyVendorDB.strictSeasonalProtection ~= false end,

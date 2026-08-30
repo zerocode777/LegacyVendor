@@ -61,6 +61,7 @@ function Share.Export(db)
     if db.strictSeasonalProtection ~= false then flags[#flags + 1] = "strict" end
     if db.onlySellLowerIlvl then flags[#flags + 1] = "lowerilvl" end
     fields[#fields + 1] = "F:" .. table.concat(flags, ",")
+    fields[#fields + 1] = "L:" .. tostring(db.protectHighIlvl and (db.highIlvlThreshold or 0) or 0)
 
     local body = table.concat(fields, ";")
     return PREFIX .. "!" .. Checksum(body) .. "!" .. body
@@ -119,6 +120,8 @@ function Share.Parse(str)
             for _, v in ipairs(SplitList(value)) do parsed.itemSources[v] = true end
         elseif key == "F" then
             for _, v in ipairs(SplitList(value)) do parsed.flags[v] = true end
+        elseif key == "L" then
+            parsed.ilvlLimit = tonumber(value)
         end
     end
 
@@ -163,6 +166,15 @@ function Share.Apply(parsed)
     -- importer can still turn it off themselves, deliberately, in Settings.
     db.protectUncollected = true
     db.strictSeasonalProtection = true
+
+    -- The item-level ceiling travels with a shared config, but an imported string
+    -- can only ever tighten it, never raise or disable someone's existing limit.
+    local incoming = tonumber(parsed.ilvlLimit) or 0
+    if incoming > 0 then
+        local current = (db.protectHighIlvl and (db.highIlvlThreshold or 0)) or 0
+        db.protectHighIlvl = true
+        db.highIlvlThreshold = (current > 0) and math.min(current, incoming) or incoming
+    end
 
     if addon.InvalidateSellableCache then addon.InvalidateSellableCache() end
     return true
