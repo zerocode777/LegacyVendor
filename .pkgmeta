@@ -4,8 +4,6 @@ enable-nolib-creation: no
 
 ignore:
   - README.md
-  - CURSEFORGE.md
-  - CURSEFORGE.html
   - .pkgmeta
   - .github
   - .git
