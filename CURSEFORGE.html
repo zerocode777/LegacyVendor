@@ -1,0 +1,151 @@
+<!-- Legacy Vendor - CurseForge description.
+     Paste into the CurseForge description editor with the editor set to HTML,
+     not the default WYSIWYG. CurseForge does not render Markdown.
+     Kept deliberately to basic tags (h2/h3/p/ul/li/strong/em/hr) because the
+     editor sanitises anything exotic. No tables: they are the element most
+     likely to be stripped or mangled. -->
+
+<h2>Legacy Vendor</h2>
+
+<p><strong>Clear years of old-expansion clutter out of your bags, without selling anything you meant to keep.</strong></p>
+
+<p>You farm old raids, delves, transmog, achievements. Your bags fill with Wrath gear you will never wear, MoP food you forgot about, and crafting leftovers from three expansions ago. Legacy Vendor sells that &mdash; and only that &mdash; when you are standing at a vendor.</p>
+
+<p>It is <strong>not</strong> a junk seller. Scrap and Dejunk already do greys perfectly well, and Legacy Vendor works happily alongside them. This is for the pile of <em>old but not worthless</em> things they leave behind.</p>
+
+<hr />
+
+<h3>Set it up in about thirty seconds</h3>
+
+<p>Type <strong>/lv setup</strong> and answer three questions:</p>
+
+<ol>
+<li><strong>Which expansions do you want to clear out?</strong></li>
+<li><strong>What kinds of items?</strong> &mdash; Gear only / Gear + old consumables / Everything</li>
+<li><strong>How careful should it be?</strong> &mdash; Very careful / Balanced / Aggressive</li>
+</ol>
+
+<p>The number of matching items in your bags updates live under every question, so you can see the effect of a choice while you are making it. Nothing is saved until you press Finish, and Cancel puts everything back exactly as it was.</p>
+
+<p>Prefer to do it by hand? The full panel walks you through the same decisions one step at a time, revealing the next question as you answer the last, and branching on your answers &mdash; picking &quot;Gear&quot; is what makes the gear-slot list appear.</p>
+
+<hr />
+
+<h3>It tells you what it is going to do</h3>
+
+<p>The thing that makes bag cleanup stressful is not knowing what a setting will actually sell. So Legacy Vendor answers that everywhere:</p>
+
+<ul>
+<li><strong>A plain-English sentence</strong> at the top of the settings, rewritten as you click:<br />
+<em>Selling Rare, Epic items from Burning Crusade that are Soulbound, but never from Professions.</em></li>
+<li><strong>A live count from your real bags:</strong> <em>23 items would sell right now (about 612g).</em></li>
+<li><strong>Everything that is protected</strong>, listed right beside it &mdash; so the sentence is never mistaken for the whole story.</li>
+<li><strong>On the item itself.</strong> Hover anything in your bags:<br />
+<em>Legacy Vendor: will sell (2g 40s)</em><br />
+<em>Legacy Vendor: keeping &mdash; uncollected appearance</em><br />
+<em>Legacy Vendor: keeping &mdash; Shadowlands is not selected</em></li>
+<li><strong>In your bags.</strong> Matching items are highlighted while a vendor is open. If some matches are scrolled out of view, a button jumps you to each one.</li>
+</ul>
+
+<hr />
+
+<h3>Bag highlighting, your way</h3>
+
+<p>While a vendor is open, every item that matches your rules is marked in your bags &mdash; so you can check the result before clicking anything.</p>
+
+<p><strong>Ten highlight styles</strong>, with a live animated preview in the settings so you can compare them without closing the panel:</p>
+
+<p>Pulsing Glow &middot; Marching Ants &middot; Solid Border &middot; Flash Pulse &middot; Full Icon Wash &middot; Soft Corners &middot; Corner Brackets &middot; Double Ring &middot; Spinning Accent &middot; Dashed Border</p>
+
+<p><strong>Any colour you want.</strong> A colour picker sits beside the style dropdown, and both the preview and the items already highlighted in your bags update the moment you change it &mdash; no reload, no reopening the vendor.</p>
+
+<p>Pick something subtle that sits quietly behind a busy bag addon, or something loud you cannot miss. If highlighting is not for you at all, turn it off.</p>
+
+<hr />
+
+<h3>Safety</h3>
+
+<p>These run <strong>before</strong> every filter and override all of them. They are listed at the top of the filter flow so you always know they are on.</p>
+
+<ul>
+<li><strong>Uncollected appearances, mounts, toys and pets are never sold.</strong> Appearances only count when your character could actually learn them, so this does not quietly stop the addon selling other armour types.</li>
+<li><strong>An item level ceiling.</strong> Never sell gear at or above a level you choose. This one does not care which expansion an item is from or where it came from &mdash; it just asks how good the item is, which makes it the most dependable guard of the lot.</li>
+<li><strong>Current-season Mythic+ gear is hard-protected.</strong> Legacy dungeons in the current rotation drop current-tier loot wearing an old expansion's label; that gear is never sold.</li>
+<li><strong>Warbound items are their own category, off by default.</strong> They are shared by every character on your account, so selling one from here removes it for all of them.</li>
+<li><strong>A never-sell list you can actually see.</strong> Drag an item onto it to protect it, review it any time, remove things individually.</li>
+<li><strong>Manual by default.</strong> A Sell button appears at the vendor; nothing happens until you click it. Optional confirmation on top of that.</li>
+<li><strong>Nothing sells that you did not enable.</strong> Crafting materials and quest items stay off until you deliberately turn them on.</li>
+</ul>
+
+<hr />
+
+<h3>Filtering, when you want the detail</h3>
+
+<p>Every filter below narrows the same rule, and the sentence at the top shows the combined result.</p>
+
+<ul>
+<li><strong>Expansions</strong> &mdash; Classic through Midnight, or &quot;sell everything from these expansions&quot; for a fast pass</li>
+<li><strong>Rarity</strong> &mdash; Poor through Legendary</li>
+<li><strong>Bind type</strong> &mdash; Soulbound, Bind on Equip, Not Bound, Warbound</li>
+<li><strong>Gear slots</strong> &mdash; every equipment slot, with the character sheet's own icons</li>
+<li><strong>Item types</strong> &mdash; bags, quest items, keys, gems, reagents, trade goods, recipes, misc</li>
+<li><strong>Sources to never sell from</strong> &mdash; consumables, dungeons, raids, world, professions, vendors, PvP, reputation, housing/delves</li>
+<li><strong>Only sell lower item level than equipped</strong> &mdash; optional</li>
+<li><strong>Per-expansion overrides</strong> &mdash; keep one expansion broad and another strict, under Advanced</li>
+</ul>
+
+<p>All / None buttons on every large group, and three one-click presets: <strong>Conservative</strong>, <strong>Everything old</strong>, <strong>Transmog-safe</strong>.</p>
+
+<hr />
+
+<h3>Profiles and sharing</h3>
+
+<ul>
+<li><strong>Named profiles.</strong> Save a setup, switch between them, and star one to load automatically on a given character &mdash; a leveling alt and a transmog main want different rules.</li>
+<li><strong>Share your setup as a string.</strong> Export it for a friend or a guide, import theirs, or keep one as a backup before experimenting. An imported config can only ever <em>tighten</em> your protections, never switch them off.</li>
+</ul>
+
+<h3>Track what you have cleared</h3>
+
+<p><strong>/lv stats</strong> shows how much gold you have reclaimed and from which expansions:</p>
+
+<blockquote>
+<p>Reclaimed 4,182g from 118 old item(s).<br />
+&nbsp;&nbsp;&nbsp;WotLK &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1,904g &nbsp;(41 items)<br />
+&nbsp;&nbsp;&nbsp;Cata &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;887g &nbsp;(26 items)<br />
+&nbsp;&nbsp;&nbsp;MoP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;612g &nbsp;(19 items)</p>
+</blockquote>
+
+<hr />
+
+<h3>Slash commands</h3>
+
+<ul>
+<li><strong>/lv setup</strong> &mdash; guided setup, three questions instead of forty options</li>
+<li><strong>/lv config</strong> &mdash; open the settings panel</li>
+<li><strong>/lv scan</strong> &mdash; preview what would be sold</li>
+<li><strong>/lv sell</strong> &mdash; sell matching items (at a vendor)</li>
+<li><strong>/lv protected</strong> &mdash; manage the never-sell list</li>
+<li><strong>/lv exclude</strong> &mdash; protect the item you are hovering</li>
+<li><strong>/lv profiles</strong> &mdash; save and switch between named setups</li>
+<li><strong>/lv export</strong> and <strong>/lv import</strong> &mdash; share your filter setup as a string</li>
+<li><strong>/lv stats</strong> &mdash; gold reclaimed, by expansion</li>
+<li><strong>/lv find</strong> &mdash; scroll your bags to the next matching item</li>
+<li><strong>/lv highlight</strong> &mdash; toggle bag highlighting</li>
+<li><strong>/lv strict</strong> &mdash; toggle current-season protection</li>
+<li><strong>/lv auto</strong> &mdash; toggle auto-sell</li>
+<li><strong>/lv toggle</strong> &mdash; enable or disable the addon</li>
+<li><strong>/lv minimap</strong> and <strong>/lv resetbutton</strong> &mdash; minimap button</li>
+<li><strong>/lv debug</strong> and <strong>/lv exportlog</strong> &mdash; record a diagnostic log and open it to copy</li>
+<li><strong>/lv reset</strong> &mdash; reset all settings</li>
+</ul>
+
+<hr />
+
+<h3>Supported versions</h3>
+
+<p>Retail (The War Within / Midnight) &middot; Mists of Pandaria Classic &middot; Burning Crusade Classic Anniversary &middot; Classic Era / Season of Discovery</p>
+
+<h3>Reporting a problem</h3>
+
+<p>Turn on Debug mode in the settings, reproduce the issue, then <strong>/lv exportlog</strong> and copy the text into a comment. That log says exactly which rule made the decision for every item in your bags, which usually pins the cause immediately.</p>

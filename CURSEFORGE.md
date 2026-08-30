@@ -34,7 +34,21 @@ The thing that makes bag cleanup stressful is not knowing what a setting will ac
   *Legacy Vendor: will sell (2g 40s)*
   *Legacy Vendor: keeping — uncollected appearance*
   *Legacy Vendor: keeping — Shadowlands is not selected*
-- **In your bags.** Matching items are highlighted while a vendor is open, in one of ten styles and any colour you like. If some matches are scrolled out of view, a button jumps you to each one.
+- **In your bags.** Matching items are highlighted while a vendor is open. If some matches are scrolled out of view, a button jumps you to each one.
+
+---
+
+## Bag highlighting, your way
+
+While a vendor is open, every item that matches your rules is marked in your bags — so you can check the result before clicking anything.
+
+**Ten highlight styles**, with a live animated preview in the settings so you can compare them without closing the panel:
+
+Pulsing Glow · Marching Ants · Solid Border · Flash Pulse · Full Icon Wash · Soft Corners · Corner Brackets · Double Ring · Spinning Accent · Dashed Border
+
+**Any colour you want.** A colour picker sits beside the style dropdown, and both the preview and the items already highlighted in your bags update the moment you change it — no reload, no reopening the vendor.
+
+Pick something subtle that sits quietly behind a busy bag addon, or something loud you cannot miss. If highlighting is not for you at all, turn it off.
 
 ---
 
