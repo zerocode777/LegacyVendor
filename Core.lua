@@ -222,6 +222,7 @@ local defaults = {
     highlightStyle = "pulse", -- Visual style id, see addon.HIGHLIGHT_STYLES
     protectUncollected = true, -- Never sell uncollected appearances/mounts/toys/pets
     showTooltipInfo = true, -- Add a "will sell / keeping - why" line to item tooltips
+    stats = { totalCopper = 0, totalItems = 0, byExpansion = {}, firstSale = nil, lastSale = nil },
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -273,6 +274,7 @@ local isSelling = false
 local itemsToSell = {}
 local totalGoldEarned = 0
 local itemsSoldCount = 0
+local sessionSoldCopper = 0 -- value of items CONFIRMED sold this run
 
 -- Debug log buffer, so the raw text can be exported via /lv exportlog instead of screenshots
 local debugLogBuffer = {}
@@ -889,7 +891,7 @@ local function ShouldSellItem(bag, slot)
     -- Special handling for gray items - bypass most filters if sellGray is enabled
     if db.sellGray and quality == 0 then
         DebugPrint("Selling gray item:", itemLink)
-        return true, itemLink, itemCount, sellPrice * itemCount
+        return true, itemLink, itemCount, sellPrice * itemCount, filterExpansionID
     end
 
     -- === FILTER 1: EXPANSION ===
@@ -926,7 +928,7 @@ local function ShouldSellItem(bag, slot)
     -- Detailed filters (including source) intentionally do NOT apply here.
     if db.sellMode == "everything" then
         DebugPrint("Meta expansion sell-all matched:", filterExpansionID, itemLink)
-        return true, itemLink, itemCount, sellPrice * itemCount
+        return true, itemLink, itemCount, sellPrice * itemCount, filterExpansionID
     end
 
     -- === FILTER 2: RARITY (Quality) ===
@@ -1041,7 +1043,7 @@ local function ShouldSellItem(bag, slot)
     end
     
     DebugPrint("Will sell:", itemLink, "Expansion:", filterExpansionID, "Quality:", quality, "Bind:", bindStatus, "Class:", classID)
-    return true, itemLink, itemCount, sellPrice * itemCount
+    return true, itemLink, itemCount, sellPrice * itemCount, filterExpansionID
 end
 
 -- Pure bag scan: builds a FRESH list and total, touching no module state.
@@ -1057,7 +1059,7 @@ local function CollectSellableItems()
     for bag = 0, NUM_BAG_SLOTS do
         local numSlots = C_Container.GetContainerNumSlots(bag)
         for slot = 1, numSlots do
-            local shouldSell, itemLink, count, price = ShouldSellItem(bag, slot)
+            local shouldSell, itemLink, count, price, expID = ShouldSellItem(bag, slot)
             if shouldSell then
                 if LegacyVendorDB and LegacyVendorDB.debug then
                     DebugPrint("ScanBags found:", itemLink, "bag=", bag, "slot=", slot)
@@ -1067,7 +1069,8 @@ local function CollectSellableItems()
                     slot = slot,
                     link = itemLink,
                     count = count,
-                    price = price or 0
+                    price = price or 0,
+                    expansion = expID,
                 }
                 goldTotal = goldTotal + (price or 0)
 
@@ -2502,15 +2505,54 @@ local function FormatMoney(copper)
 end
 
 -- Sell next item in queue
+-- Lifetime "gold reclaimed" tracking. Recorded per confirmed sale rather than from
+-- the queue, so failed or skipped items never inflate it.
+local function RecordSale(item)
+    if not LegacyVendorDB then return end
+
+    local st = LegacyVendorDB.stats
+    if type(st) ~= "table" then
+        st = { totalCopper = 0, totalItems = 0, byExpansion = {} }
+        LegacyVendorDB.stats = st
+    end
+    st.byExpansion = st.byExpansion or {}
+
+    local value = item and item.price or 0
+    st.totalCopper = (st.totalCopper or 0) + value
+    st.totalItems = (st.totalItems or 0) + 1
+
+    local expID = item and item.expansion
+    if expID then
+        local row = st.byExpansion[expID]
+        if not row then
+            row = { copper = 0, items = 0 }
+            st.byExpansion[expID] = row
+        end
+        row.copper = row.copper + value
+        row.items = row.items + 1
+    end
+
+    local now = time and time() or nil
+    st.firstSale = st.firstSale or now
+    st.lastSale = now
+end
+addon.RecordSale = RecordSale
+
 local function SellNextItem()
     if not isSelling or #itemsToSell == 0 then
         isSelling = false
         if itemsSoldCount > 0 and LegacyVendorDB.showSummary then
-            Print(string.format("Sold %d legacy item(s) for %s", itemsSoldCount, FormatMoney(totalGoldEarned)))
+            Print(string.format("Sold %d legacy item(s) for %s", itemsSoldCount, FormatMoney(sessionSoldCopper)))
+            local st = LegacyVendorDB.stats
+            if st and (st.totalCopper or 0) > 0 then
+                Print(string.format("|cFF888888Reclaimed %s from old clutter so far. /lv stats|r",
+                    FormatMoney(st.totalCopper)))
+            end
         elseif itemsSoldCount == 0 and LegacyVendorDB.showSummary then
             Print("No items were sold - items may have been moved or filters changed")
         end
         itemsSoldCount = 0
+        sessionSoldCopper = 0
         totalGoldEarned = 0
         
         -- Update button to reflect new count
@@ -2542,6 +2584,11 @@ local function SellNextItem()
         
         if success then
             itemsSoldCount = itemsSoldCount + 1
+            -- totalGoldEarned previously held the value of the WHOLE queue and was
+            -- never decremented, so the summary reported queued value rather than
+            -- what actually sold. Accumulate confirmed sales instead.
+            sessionSoldCopper = sessionSoldCopper + (item.price or 0)
+            RecordSale(item)
             DebugPrint("  Sold successfully!")
         else
             Print("  FAILED to sell: " .. (err or "unknown error"))
@@ -2963,6 +3010,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv setup - Guided setup: three questions instead of forty options")
         Print("  /lv protected - Manage the never-sell list")
         Print("  /lv find - Scroll your bags to the next matching item")
+        Print("  /lv stats - How much gold you have reclaimed, by expansion")
         Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
@@ -3034,6 +3082,39 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "stats" then
+        local st = LegacyVendorDB.stats
+        if not st or (st.totalItems or 0) == 0 then
+            Print("You have not sold anything with LegacyVendor yet.")
+        else
+            Print(string.format("Reclaimed |cFFFFD100%s|r from |cFFFFD100%d|r old item(s).",
+                FormatMoney(st.totalCopper or 0), st.totalItems or 0))
+
+            -- Per-expansion breakdown, biggest earner first: this is the part a
+            -- generic gold tracker cannot tell you.
+            local rows = {}
+            for expID, row in pairs(st.byExpansion or {}) do
+                rows[#rows + 1] = { id = expID, copper = row.copper or 0, items = row.items or 0 }
+            end
+            table.sort(rows, function(a, b) return a.copper > b.copper end)
+
+            for i, row in ipairs(rows) do
+                if i > 8 then break end
+                local exp = addon.EXPANSIONS[row.id]
+                local name = exp and (exp.short or exp.name) or ("Exp " .. tostring(row.id))
+                print(string.format("   %-10s %s  |cFF888888(%d items)|r",
+                    name, FormatMoney(row.copper), row.items))
+            end
+
+            if st.firstSale and date then
+                print("|cFF888888   since " .. date("%d %b %Y", st.firstSale) .. "|r")
+            end
+        end
+
+    elseif msg == "resetstats" then
+        LegacyVendorDB.stats = { totalCopper = 0, totalItems = 0, byExpansion = {} }
+        Print("Lifetime totals cleared.")
 
     elseif msg == "find" or msg == "next" then
         if addon.ScrollToNextMatch then addon.ScrollToNextMatch() end
@@ -3421,6 +3502,11 @@ local function CreateMinimapButton()
         GameTooltip:AddLine("|cFF00FF00Shift+Drag:|r Freeform Position (anywhere)", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("|cFF00FF00/lv resetbutton:|r Reset to minimap", 0.8, 0.8, 0.8)
         GameTooltip:AddLine(" ")
+        local st = LegacyVendorDB.stats
+        if st and (st.totalCopper or 0) > 0 then
+            GameTooltip:AddLine(string.format("Reclaimed %s from %d old item(s)",
+                FormatMoney(st.totalCopper), st.totalItems or 0), 1, 0.82, 0)
+        end
         local status = LegacyVendorDB.enabled and "|cFF00FF00Enabled|r" or "|cFFFF0000Disabled|r"
         GameTooltip:AddLine("Status: " .. status, 0.7, 0.7, 0.7)
         local posMode = LegacyVendorDB.minimapButton.freeform and "Freeform" or "Minimap-attached"
