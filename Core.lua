@@ -2273,6 +2273,12 @@ UpdateBagHighlightsBody = function()
     local applied, missing, verified = 0, 0, 0
     local globalEnumList, legacyNameList
 
+    if LegacyVendorDB and LegacyVendorDB.debug then
+        local sw = UIParent and UIParent:GetWidth() or 0
+        local sh = UIParent and UIParent:GetHeight() or 0
+        DebugPrint(string.format("Screen is %.0f x %.0f - anything outside that is off-screen:", sw, sh))
+    end
+
     for _, item in ipairs(items) do
         local button = buttonBySlot[item.bag .. ":" .. item.slot]
 
@@ -2292,6 +2298,20 @@ UpdateBagHighlightsBody = function()
         if button then
             if button._lvVerified then verified = verified + 1 end
             local shown = button.IsVisible and button:IsVisible()
+
+            -- Where did this button actually end up on screen? IsVisible() is true
+            -- for a button scrolled outside its parent scroll frame's viewport, so a
+            -- correctly-placed highlight can still be somewhere the player cannot
+            -- see. Coordinates make that case self-evident instead of a guess.
+            if LegacyVendorDB and LegacyVendorDB.debug then
+                local cx, cy = button:GetCenter()
+                local alpha = button.GetEffectiveAlpha and button:GetEffectiveAlpha() or -1
+                local w = button.GetWidth and button:GetWidth() or -1
+                DebugPrint(string.format("  -> %s  bag=%d slot=%d  at(%.0f,%.0f) size=%.0f alpha=%.2f visible=%s",
+                    tostring(item.link or "?"), item.bag, item.slot,
+                    cx or -1, cy or -1, w, alpha, tostring(shown)))
+            end
+
             if shown then
                 local ok, err = pcall(ApplyHighlight, button)
                 if ok then
