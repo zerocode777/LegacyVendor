@@ -5,6 +5,77 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-08-30
+
+The settings panel is rebuilt, selling is safer, and the addon can now explain
+itself. Everything below is new unless marked otherwise.
+
+### Added
+
+**Protection**
+- Uncollected appearances, mounts, toys and caged pets are never sold. Appearances
+  are only protected when your character could actually learn them, so this does not
+  quietly stop the addon selling other armour types.
+- Warbound (account-bound) items are now their own category with their own toggle,
+  off by default. They were previously treated as unbound.
+- A visible never-sell list (`/lv protected`). Items can be added by dragging them
+  onto the window, removed individually, and inspected by hovering. Previously this
+  list could only be added to from chat, and never reviewed.
+
+**Understanding what will sell**
+- Item tooltips now say whether an item will sell, and if not, why: "keeping -
+  Shadowlands is not selected", "keeping - uncollected appearance".
+- The settings panel shows a live plain-English sentence describing exactly what will
+  sell, updating as you click: *Selling Rare, Epic items from Burning Crusade that
+  are Soulbound, but never from Professions.*
+- Under it, a live count from your actual bags: "23 items would sell right now
+  (about 612g)".
+- The Sell button count updates as your bags change, instead of only when reopening
+  the vendor.
+- When matching items sit outside the visible part of your bag window, a button
+  beside Sell jumps to each one (`/lv find`).
+
+**Setting it up**
+- Guided setup (`/lv setup`): three questions instead of forty options, with a live
+  preview of what each answer would sell.
+- The filter panel is now a step-by-step flow that reveals one question at a time and
+  branches on your answers - choosing "Gear" is what shows the gear slot list.
+- One-click presets: Conservative, Everything old, Transmog-safe.
+- All / None buttons on every large filter group.
+- Filter groups are icon and colour chips instead of checkbox columns. Rarity chips
+  carry the real quality colour, gear slots use the character sheet's own art.
+- Named profiles (`/lv profiles`) that can be saved, switched, and starred to load
+  automatically on a given character.
+- Filter setups can be exported and imported as a string (`/lv export`, `/lv import`)
+  to share a configuration or keep a backup.
+
+**Tracking**
+- Lifetime totals (`/lv stats`): how much gold you have reclaimed and how many items,
+  broken down per expansion.
+
+**Appearance**
+- Ten bag highlight styles to choose from, with a live preview, plus a colour picker.
+
+### Changed
+- Debug mode no longer prints to chat. It records to a log you can open and copy from
+  (`/lv exportlog`).
+- General settings are grouped into Selling mode, Safety, Behaviour, Appearance and
+  Troubleshooting, and options are named for what they do rather than what they are
+  called internally.
+- Chat output during a sale is reduced to a single summary line.
+
+### Fixed
+- Current-season gear from refreshed dungeons (for example Kings' Rest and Temple of
+  Sethraliss) could be sold even with Mythic+ protection enabled. Protection depended
+  on being able to identify an item's source, and for most items the game reports no
+  source at all - so the item-level checks that catch scaled legacy gear never ran.
+  Those checks no longer depend on source detection, which also means future seasonal
+  rotations are handled without waiting for an addon update.
+
+### Notes
+- Existing settings are carried over. Nothing new sells without you enabling it, and
+  the two protection options default to on.
+
 ## [2.3.0] - 2026-08-27
 
 ### Added

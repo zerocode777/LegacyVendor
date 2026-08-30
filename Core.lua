@@ -666,10 +666,18 @@ local function IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItem
         return false
     end
 
+    -- Source detection is a WEAK signal, not a gate. C_ItemSourceInfo frequently
+    -- returns nothing and the tooltip heuristics rarely produce "dungeon", so most
+    -- gear resolves to "unknown" - and while this was an early return, every item
+    -- with an undetectable source skipped all four checks below and was sold. That
+    -- is why current-season gear from refreshed dungeons (Kings' Rest, Temple of
+    -- Sethraliss) slipped through with M+ protection switched on.
+    --
+    -- The item-level signals do not need the source: an item carrying a legacy
+    -- expansion ID while scaled to current-season item level is suspicious however
+    -- it was obtained. Source is now only used to bias toward protecting.
     local sourceBucket = GetItemSource(itemID, bag, slot)
-    if sourceBucket ~= "dungeon" and sourceBucket ~= "raid" then
-        return false
-    end
+    local sourceSuggestsInstance = (sourceBucket == "dungeon" or sourceBucket == "raid")
 
     -- Signal 1: explicit instance allowlist for current seasonal rotation.
     if C_ItemSourceInfo and C_ItemSourceInfo.GetItemSourceInfo then
@@ -684,18 +692,24 @@ local function IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItem
 
     local effectiveIlvl = GetDetailedItemLevelInfo and GetDetailedItemLevelInfo(itemLink)
     if not effectiveIlvl then
-        return false
+        -- No item level to reason about. Protect anyway if the source did say the
+        -- item came out of an instance: unknown beats sold-by-mistake here.
+        return sourceSuggestsInstance
     end
 
     -- Signal 2: expansion-specific ilvl ceiling (safe for most legacy expansions).
     local ilvlCeiling = addon.EXPANSION_ILVL_CEILING[expansionID]
     if ilvlCeiling and effectiveIlvl > ilvlCeiling then
+        DebugPrint("Seasonal protection: ilvl", effectiveIlvl, "exceeds ceiling",
+            ilvlCeiling, "for expansion", expansionID, itemLink)
         return true
     end
 
     -- Signal 3: large scaling delta between base and effective item level.
     -- Current-season scaling bonuses typically create a large gap.
     if baseItemLevel and baseItemLevel > 0 and (effectiveIlvl - baseItemLevel) >= 120 then
+        DebugPrint("Seasonal protection: scaled +",
+            effectiveIlvl - baseItemLevel, "above base", itemLink)
         return true
     end
 
@@ -703,6 +717,8 @@ local function IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItem
     -- Skip WoD/Legion here because pre-squish item levels can be unusually high.
     local hardFloor = addon.STRICT_SEASONAL_ILVL_FLOOR
     if hardFloor and expansionID ~= 5 and expansionID ~= 6 and effectiveIlvl >= hardFloor then
+        DebugPrint("Seasonal protection: ilvl", effectiveIlvl, "at/above hard floor",
+            hardFloor, itemLink)
         return true
     end
 
