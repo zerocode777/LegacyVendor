@@ -55,6 +55,7 @@ function Share.Export(db)
     if db.sellBoP then flags[#flags + 1] = "bop" end
     if db.sellBoE then flags[#flags + 1] = "boe" end
     if db.sellUnbound then flags[#flags + 1] = "unbound" end
+    if db.sellWarbound then flags[#flags + 1] = "warband" end
     if db.sellGray then flags[#flags + 1] = "gray" end
     if db.protectUncollected ~= false then flags[#flags + 1] = "protect" end
     if db.strictSeasonalProtection ~= false then flags[#flags + 1] = "strict" end
@@ -152,6 +153,7 @@ function Share.Apply(parsed)
     db.sellBoP = f.bop and true or false
     db.sellBoE = f.boe and true or false
     db.sellUnbound = f.unbound and true or false
+    db.sellWarbound = f.warband and true or false
     db.sellGray = f.gray and true or false
     db.onlySellLowerIlvl = f.lowerilvl and true or false
 

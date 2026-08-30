@@ -66,12 +66,14 @@ addon.Visuals.BindIcon = {
     bop     = ICONS .. "INV_Misc_Bandage_Netherweave_Heavy",
     boe     = ICONS .. "INV_Misc_Note_02",
     unbound = ICONS .. "INV_Misc_Food_15",
+    warband = ICONS .. "INV_Misc_GroupLooking",
 }
 
 -- Short labels keep chips compact; the full name still shows in the tooltip.
 addon.Visuals.ShortLabel = {
     -- Bind types
     bop = "Soulbound", boe = "Bind on Equip", unbound = "Not Bound",
+    warband = "Warbound",
     -- Sources
     consumable = "Consumables", dungeon = "Dungeons", raid = "Raids",
     outdoor = "World", profession = "Professions", vendor = "Vendor",

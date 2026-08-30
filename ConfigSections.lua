@@ -136,9 +136,12 @@ function Sections.RenderBindTypes(content, yOffset, onChange, registry, rebuild)
           tooltip = "Sell Bind on Equip items that are already bound." },
         { key = "unbound", label = V.ShortLabel.unbound, icon = V.BindIcon.unbound,
           tooltip = "Sell items that never bound - old food, reagents. Be careful." },
+        { key = "warband", label = V.ShortLabel.warband, icon = V.BindIcon.warband,
+          tooltip = "Warbound items are shared by every character on your account - "
+                 .. "selling one here removes it for all of them. Off by default." },
     }
 
-    local field = { bop = "sellBoP", boe = "sellBoE", unbound = "sellUnbound" }
+    local field = { bop = "sellBoP", boe = "sellBoE", unbound = "sellUnbound", warband = "sellWarbound" }
 
     return Sections.RenderChipGroup(content, yOffset, specs,
         function(key) return LegacyVendorDB[field[key]] end,

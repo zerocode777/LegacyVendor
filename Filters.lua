@@ -184,6 +184,9 @@ function addon.BuildFilterSentence(db)
       bindNames[#bindNames + 1] = (addon.Visuals and addon.Visuals.ShortLabel[key]) or key
     end
   end
+  if db.sellWarbound then
+    bindNames[#bindNames + 1] = (addon.Visuals and addon.Visuals.ShortLabel.warband) or "Warbound"
+  end
   table.sort(bindNames)
   local bindPart = (#bindNames > 0) and (" that are " .. hl(joinList(bindNames))) or ""
 

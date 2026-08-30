@@ -224,6 +224,7 @@ local defaults = {
     showTooltipInfo = true, -- Add a "will sell / keeping - why" line to item tooltips
     stats = { totalCopper = 0, totalItems = 0, byExpansion = {}, firstSale = nil, lastSale = nil },
     autoConfirmTradeTimer = false, -- Auto-accept "will become non-tradeable" prompts while selling
+    sellWarbound = false, -- Warband/account-bound items are shared by every character: opt in explicitly
     profiles = {},      -- name -> { config = <share string>, saved = <time> }
     charProfiles = {},  -- "Name-Realm" -> profile name, loaded automatically at login
     activeProfile = nil,
@@ -471,8 +472,24 @@ local function GetItemBindStatus(bag, slot, itemID)
         bindType = itemBindType
     end
     
+    -- Warband / account binding (TWW). Enum values, with literals as the fallback
+    -- for clients where Enum.ItemBind is absent:
+    --   5 ToWoWAccount, 6 ToBnetAccount, 7 ToBnetAccountUntilEquipped
+    local B = Enum and Enum.ItemBind
+    local accountBinds = {
+        [(B and B.ToWoWAccount) or 5] = true,
+        [(B and B.ToBnetAccount) or 6] = true,
+        [(B and B.ToBnetAccountUntilEquipped) or 7] = true,
+    }
+
     -- Determine status
-    if not isBound then
+    if accountBinds[bindType] then
+        -- Checked BEFORE the isBound test: these are shared across every character
+        -- on the account, so selling one from here removes it for all of them. They
+        -- previously fell through to "unbound", which meant enabling unbound selling
+        -- would quietly sweep up warband items.
+        return "warband"
+    elseif not isBound then
         return "unbound"  -- Item is not bound (food, reagents, etc.)
     elseif bindType == 1 then
         return "bop"      -- Bind on Pickup
@@ -957,6 +974,9 @@ local function ShouldSellItem(bag, slot)
     elseif bindStatus == "unbound" and activeBindTypes.unbound then
         bindAllowed = true
     elseif bindStatus == "bou" and activeBindTypes.unbound then
+        bindAllowed = true
+    elseif bindStatus == "warband" and db.sellWarbound then
+        -- Its own opt-in, never covered by any other bind toggle.
         bindAllowed = true
     end
 
