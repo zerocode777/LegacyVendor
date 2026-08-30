@@ -3081,6 +3081,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv protected - Manage the never-sell list")
         Print("  /lv find - Scroll your bags to the next matching item")
         Print("  /lv stats - How much gold you have reclaimed, by expansion")
+        Print("  /lv export | /lv import - Share your filter setup as a string")
         Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
@@ -3152,6 +3153,12 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "export" then
+        if addon.Share then addon.Share.Open("export") end
+
+    elseif msg == "import" then
+        if addon.Share then addon.Share.Open("import") end
 
     elseif msg == "stats" then
         local st = LegacyVendorDB.stats

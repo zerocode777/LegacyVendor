@@ -233,6 +233,9 @@ local function CreateSimpleConfig()
         end
     end
 
+    -- Let other modules (filter import, presets) rebuild this panel.
+    addon.RefreshConfig = RefreshConfigFrame
+
     -- Display order for the per-expansion "Advanced" overrides further down. The main
     -- filter sections render as chips via addon.Sections and carry their own ordering.
     local rarityOrder = { 0, 1, 2, 3, 4, 5, 6, 7 }
@@ -798,6 +801,11 @@ local function CreateSimpleConfig()
 
         yOffset = yOffset - 80
     end
+
+    MakeBtn(26, "Share / import filters", function()
+        if addon.Share then addon.Share.Open("export") end
+    end)
+    yOffset = yOffset - 30
 
     MakeBtn(26, "Manage never-sell list", function()
         if addon.Exclusions then addon.Exclusions.Open() end
