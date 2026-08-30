@@ -1,0 +1,35 @@
+# Builds the addon and uploads it to CurseForge whenever a version tag is pushed.
+#
+# Requires two things that live outside this file:
+#   1. A CF_API_KEY repository secret (Settings > Secrets and variables > Actions).
+#      Generate the token at https://legacy.curseforge.com/account/api-tokens
+#   2. The real numeric project ID in the .toc files as X-Curse-Project-ID.
+#      It is shown on the CurseForge project page under "About Project".
+#
+# Without both, the packager will build the zip but skip the upload.
+
+name: Package and release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Full history so the packager can build a changelog from the tags.
+          fetch-depth: 0
+
+      - name: Package and upload
+        uses: BigWigsMods/packager@master
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
