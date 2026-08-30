@@ -2212,6 +2212,75 @@ local function UpdateBagHighlights()
     end
 end
 
+-- Walks up from a bag button to whatever ScrollFrame contains it. Deliberately
+-- generic: EllesmereUI, Blizzard and most bag addons all put their item grid in a
+-- scroll child, so this needs no per-addon knowledge.
+local function FindScrollFrameAncestor(frame)
+    local f, depth = frame, 0
+    while f and depth < 12 do
+        if f.GetObjectType and f:GetObjectType() == "ScrollFrame" and f.SetVerticalScroll then
+            return f
+        end
+        f = f.GetParent and f:GetParent() or nil
+        depth = depth + 1
+    end
+    return nil
+end
+
+-- Scrolls a bag button into the middle of its scroll frame's viewport.
+local function ScrollButtonIntoView(button)
+    if not button then return false end
+
+    local sf = FindScrollFrameAncestor(button)
+    if not sf then return false end
+
+    local child = sf.GetScrollChild and sf:GetScrollChild()
+    if not child then return false end
+
+    local childTop = child.GetTop and child:GetTop()
+    local btnTop = button.GetTop and button:GetTop()
+    if not (childTop and btnTop) then return false end
+
+    -- Offset of the button from the top of the scrolling content, biased so the
+    -- target lands partway down the viewport rather than flush against the edge.
+    local viewHeight = (sf.GetHeight and sf:GetHeight()) or 0
+    local target = (childTop - btnTop) - (viewHeight * 0.4)
+
+    local range = (sf.GetVerticalScrollRange and sf:GetVerticalScrollRange()) or 0
+    target = math.max(0, math.min(target, range))
+
+    sf:SetVerticalScroll(target)
+    return true
+end
+
+-- Buttons highlighted by the last pass, in bag order, for "find next match".
+local highlightedButtons = {}
+local findNextIndex = 0
+
+-- Cycles through matching items, scrolling each into view. Lets a player reach the
+-- matches that are laid out past the edge of the bag window's viewport, which no
+-- amount of highlighting can make visible on its own.
+function addon.ScrollToNextMatch()
+    if #highlightedButtons == 0 then
+        Print("No matching items to jump to.")
+        return
+    end
+
+    for _ = 1, #highlightedButtons do
+        findNextIndex = (findNextIndex % #highlightedButtons) + 1
+        local entry = highlightedButtons[findNextIndex]
+        if entry and entry.button and entry.button.IsVisible and entry.button:IsVisible() then
+            if ScrollButtonIntoView(entry.button) then
+                Print(("Showing %s  (%d of %d)"):format(
+                    entry.link or "match", findNextIndex, #highlightedButtons))
+                return
+            end
+        end
+    end
+
+    Print("Could not scroll your bag window - is it open?")
+end
+
 UpdateBagHighlightsBody = function()
     -- The sellable list is AUTHORITATIVE. Previously this walked the bag addon's
     -- buttons and asked "should this one sell?", while the Sell (N) button and the
@@ -2271,6 +2340,8 @@ UpdateBagHighlightsBody = function()
     end
 
     local applied, missing, verified, offscreen = 0, 0, 0, 0
+    wipe(highlightedButtons)
+    findNextIndex = 0
     local globalEnumList, legacyNameList
 
     if LegacyVendorDB and LegacyVendorDB.debug then
@@ -2328,6 +2399,7 @@ UpdateBagHighlightsBody = function()
                 local ok, err = pcall(ApplyHighlight, button)
                 if ok then
                     applied = applied + 1
+                    highlightedButtons[#highlightedButtons + 1] = { button = button, link = item.link }
                 else
                     missing = missing + 1
                     if LegacyVendorDB and LegacyVendorDB.debug then
@@ -2638,6 +2710,9 @@ local function OnEvent(self, event, ...)
         if addon.sellButton then
             addon.sellButton:Hide()
         end
+        if addon.findButton then
+            addon.findButton:Hide()
+        end
         if addon.UpdateBagHighlights then
             addon.UpdateBagHighlights()
         end
@@ -2713,6 +2788,27 @@ local function CreateSellButton()
     end)
     
     addon.sellButton = btn
+
+    -- Jump-to-match button. Only appears when some matching items are laid out
+    -- past the edge of the bag window's viewport, where a highlight cannot be seen.
+    local find = CreateFrame("Button", "LegacyVendorFindButton", MerchantFrame, "UIPanelButtonTemplate")
+    find:SetSize(24, 24)
+    find:SetPoint("LEFT", btn, "RIGHT", 2, 0)
+    find:SetText("v")
+    find:Hide()
+    find:SetScript("OnClick", function()
+        if addon.ScrollToNextMatch then addon.ScrollToNextMatch() end
+    end)
+    find:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("|cFFFFD100Find next match|r")
+        GameTooltip:AddLine(("%d matching item(s) are further down in your bags."):format(
+            addon.highlightOffscreenCount or 0), 1, 1, 1, true)
+        GameTooltip:AddLine("Click to scroll your bags to the next one.", 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+    end)
+    find:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    addon.findButton = find
 end
 
 function addon.UpdateMerchantButton()
@@ -2747,6 +2843,11 @@ function addon.UpdateMerchantButton()
     end
 
     addon.sellButton:Show()
+
+    if addon.findButton then
+        local off = addon.highlightOffscreenCount or 0
+        addon.findButton:SetShown(off > 0 and LegacyVendorDB and LegacyVendorDB.highlightItems and true or false)
+    end
 end
 
 -- BAG_UPDATE fires once per bag, so a single vendored item can emit several events
@@ -2861,6 +2962,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv debug - Toggle debug mode")
         Print("  /lv setup - Guided setup: three questions instead of forty options")
         Print("  /lv protected - Manage the never-sell list")
+        Print("  /lv find - Scroll your bags to the next matching item")
         Print("  /lv exportlog - Open a copyable window with the debug log")
         Print("  /lv strict - Toggle strict seasonal protection")
         Print("  /lv meta - Toggle expansion sell-all mode")
@@ -2932,6 +3034,9 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "debug" then
         LegacyVendorDB.debug = not LegacyVendorDB.debug
         Print("Debug mode " .. (LegacyVendorDB.debug and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r") .. " - use /lv exportlog to view/copy the log.")
+
+    elseif msg == "find" or msg == "next" then
+        if addon.ScrollToNextMatch then addon.ScrollToNextMatch() end
 
     elseif msg == "protected" or msg == "exclusions" then
         if addon.Exclusions then addon.Exclusions.Open() end
