@@ -9,7 +9,7 @@ local addonName, addon = ...
 local Wizard = {}
 addon.Wizard = Wizard
 
-local FRAME_W, FRAME_H = 520, 520
+local FRAME_W, FRAME_H = 520, 570
 local STEP_COUNT = 4
 
 -- Snapshot/restore so Cancel genuinely undoes everything the flow touched.
@@ -25,7 +25,14 @@ local function Snapshot(db)
         equipSlots = copy(db.equipSlots), itemTypes = copy(db.itemTypes),
         itemSources = copy(db.itemSources), sellMode = db.sellMode,
         sellBoP = db.sellBoP, sellBoE = db.sellBoE, sellUnbound = db.sellUnbound,
+        -- Every guard the flow can display or change, so Cancel really does undo
+        -- everything it touched rather than only the parts added first.
         protectUncollected = db.protectUncollected,
+        strictSeasonalProtection = db.strictSeasonalProtection,
+        protectHighIlvl = db.protectHighIlvl,
+        highIlvlThreshold = db.highIlvlThreshold,
+        sellWarbound = db.sellWarbound,
+        sellGray = db.sellGray,
     }
 end
 
@@ -186,7 +193,7 @@ function Wizard.Open()
 
     f.Body = CreateFrame("Frame", nil, f)
     f.Body:SetPoint("TOPLEFT", 14, -100)
-    f.Body:SetPoint("BOTTOMRIGHT", -14, 74)
+    f.Body:SetPoint("BOTTOMRIGHT", -14, 124)
 
     -- Running count: the whole point of the flow is seeing this move as you choose.
     f.Live = addon.Widgets.CreateSummaryBar(f)
@@ -256,6 +263,9 @@ function Wizard.RefreshLive()
     local f = Wizard.frame
     if not f then return end
     f.Live:SetSentence(addon.BuildFilterSentence(LegacyVendorDB))
+    if addon.BuildProtectionSummary then
+        f.Live:SetProtections(addon.BuildProtectionSummary(LegacyVendorDB))
+    end
 
     -- Keep the merchant button and bag highlights in step with the flow, so a
     -- choice made here is reflected everywhere immediately.
@@ -390,13 +400,26 @@ function Wizard.Goto(step)
         end
 
         local lines = {}
+
+        local kept = addon.BuildProtectionSummary and addon.BuildProtectionSummary(LegacyVendorDB) or {}
+        if #kept > 0 then
+            lines[#lines + 1] = "|cFF88CC88Never sold, whatever you picked:|r"
+            for _, entry in ipairs(kept) do
+                lines[#lines + 1] = "|cFF88CC88  - " .. entry .. "|r"
+            end
+            lines[#lines + 1] = " "
+        else
+            lines[#lines + 1] = "|cFFCC8844Nothing is protected - everything matching will sell.|r"
+            lines[#lines + 1] = " "
+        end
+
         if items and #items > 0 then
             lines[#lines + 1] = "|cFFFFD100Examples from your bags:|r"
-            for i = 1, math.min(12, #items) do
+            for i = 1, math.min(8, #items) do
                 lines[#lines + 1] = "  " .. (items[i].link or "?")
             end
-            if #items > 12 then
-                lines[#lines + 1] = ("  |cFF888888...and %d more|r"):format(#items - 12)
+            if #items > 8 then
+                lines[#lines + 1] = ("  |cFF888888...and %d more|r"):format(#items - 8)
             end
         else
             lines[#lines + 1] = "|cFFFFCC00Nothing in your bags matches these settings right now.|r"
