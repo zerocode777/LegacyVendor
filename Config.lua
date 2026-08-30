@@ -309,6 +309,9 @@ local function CreateSimpleConfig()
     local countPending = false
     local function RefreshSummary()
         topSummaryFrame:SetSentence(addon.BuildFilterSentence(LegacyVendorDB))
+        if addon.BuildProtectionSummary then
+            topSummaryFrame:SetProtections(addon.BuildProtectionSummary(LegacyVendorDB))
+        end
 
         -- Coalesce rapid clicking into one scan.
         if not countPending then
@@ -942,6 +945,42 @@ local function CreateSimpleConfig()
         end
 
         yOffset = yOffset - 8
+    end
+
+    -- STEP 0: the hard stops. These run BEFORE every filter below and override them,
+    -- so showing them here - at the head of the same sequence - is the only way the
+    -- flow tells the truth. Presented as settled context, not another question.
+    do
+        AddHeader("|cFF88CC88Always protected|r  |cFF888888(before any filter below)|r",
+            "These are never sold, whatever you choose in the steps that follow.", "sources")
+
+        local kept = addon.BuildProtectionSummary and addon.BuildProtectionSummary(LegacyVendorDB) or {}
+        local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPLEFT", 44, yOffset)
+        fs:SetPoint("TOPRIGHT", content, "TOPRIGHT", -14, yOffset)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(true)
+
+        if #kept == 0 then
+            fs:SetText("|cFFCC8844Nothing is protected. Every item matching the steps below will sell.|r")
+        else
+            fs:SetText("|cFF88CC88- " .. table.concat(kept, "
+- ") .. "|r")
+        end
+        yOffset = yOffset - (fs:GetStringHeight() or 14) - 12
+
+        local editBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        editBtn:SetPoint("TOPLEFT", 44, yOffset)
+        editBtn:SetSize(200, 22)
+        editBtn:SetText("Change what is protected")
+        editBtn:SetScript("OnClick", function()
+            -- The guards live in General Settings above; jump there rather than
+            -- duplicating the same controls in two places and letting them drift.
+            scrollFrame:SetVerticalScroll(0)
+        end)
+        yOffset = yOffset - 34
+
+        AddSep()
     end
 
     -- STEP 1: expansions. Always visible - everything else depends on it.

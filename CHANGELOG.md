@@ -35,7 +35,10 @@ itself. Everything below is new unless marked otherwise.
   sell, updating as you click: *Selling Rare, Epic items from Burning Crusade that
   are Soulbound, but never from Professions.*
 - Under it, a live count from your actual bags: "23 items would sell right now
-  (about 612g)".
+  (about 612g)", and a line naming everything that is protected regardless of your
+  filters, so the sentence above is never mistaken for the whole story.
+- The filter flow now opens with an "Always protected" summary listing the guards
+  that run before any filter, because they override every choice made below them.
 - The Sell button count updates as your bags change, instead of only when reopening
   the vendor.
 - When matching items sit outside the visible part of your bag window, a button

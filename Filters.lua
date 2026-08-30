@@ -200,3 +200,31 @@ function addon.BuildFilterSentence(db)
 
   return "Selling " .. rarPart .. " items from " .. expText .. bindPart .. skipPart .. "."
 end
+
+-- The hard stops run BEFORE every filter and silently override them, so a sentence
+-- describing only the filters is an incomplete answer to "what will sell?". This
+-- names them so the two halves can be shown together.
+function addon.BuildProtectionSummary(db)
+  local kept = {}
+
+  if db.protectUncollected ~= false then
+    kept[#kept + 1] = "uncollected appearances, mounts, toys & pets"
+  end
+  if db.strictSeasonalProtection ~= false then
+    kept[#kept + 1] = "current-season Mythic+ gear"
+  end
+  if db.protectHighIlvl and (db.highIlvlThreshold or 0) > 0 then
+    kept[#kept + 1] = "anything at item level " .. db.highIlvlThreshold .. "+"
+  end
+  if not db.sellWarbound then
+    kept[#kept + 1] = "Warbound items"
+  end
+
+  local excluded = 0
+  for _ in pairs(db.excludedItems or {}) do excluded = excluded + 1 end
+  if excluded > 0 then
+    kept[#kept + 1] = excluded .. " item" .. (excluded == 1 and "" or "s") .. " you protected by hand"
+  end
+
+  return kept
+end

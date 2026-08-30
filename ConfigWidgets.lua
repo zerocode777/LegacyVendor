@@ -213,7 +213,7 @@ end
 -- count, so a setting's effect is visible next to the setting itself.
 function Widgets.CreateSummaryBar(parent)
     local bar = CreateFrame("Frame", nil, parent)
-    bar:SetHeight(52)
+    bar:SetHeight(74)
     Widgets.ApplyCard(bar, { 0.06, 0.10, 0.06, 0.9 }, { 0.28, 0.42, 0.28, 1 })
 
     bar.Sentence = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -222,12 +222,30 @@ function Widgets.CreateSummaryBar(parent)
     bar.Sentence:SetJustifyH("LEFT")
     bar.Sentence:SetWordWrap(true)
 
+    -- The hard stops, shown with the filters rather than only in Settings. Without
+    -- this the sentence above reads as the whole story, which is how someone ends up
+    -- believing a protected item is about to be sold.
+    bar.Protected = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    bar.Protected:SetPoint("TOPLEFT", bar.Sentence, "BOTTOMLEFT", 0, -4)
+    bar.Protected:SetPoint("RIGHT", -10, 0)
+    bar.Protected:SetJustifyH("LEFT")
+    bar.Protected:SetWordWrap(true)
+    bar.Protected:SetTextColor(0.62, 0.72, 0.62)
+
     bar.Count = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     bar.Count:SetPoint("BOTTOMLEFT", 10, 8)
     bar.Count:SetJustifyH("LEFT")
 
     function bar:SetSentence(text)
         self.Sentence:SetText(text or "")
+    end
+
+    function bar:SetProtections(list)
+        if not list or #list == 0 then
+            self.Protected:SetText("|cFFCC8844Nothing is protected - every match above will sell.|r")
+            return
+        end
+        self.Protected:SetText("Never sold: " .. table.concat(list, ", ") .. ".")
     end
 
     function bar:SetCount(text, isZero)
