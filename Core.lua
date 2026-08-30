@@ -2822,6 +2822,21 @@ local function OnEvent(self, event, ...)
                     end
                 end
 
+                -- The item level ceiling first shipped at 620, a pre-squish number
+                -- that cannot be reached on the current scale - so a saved 620 is
+                -- protecting nothing at all. Changing the default alone does not
+                -- help anyone who already has a value stored, which is everyone who
+                -- ran a build before this one.
+                if LegacyVendorDB.highIlvlThreshold == 620 then
+                    LegacyVendorDB.highIlvlThreshold = 285
+                end
+
+                -- Same story for the seasonal hard floor, which is not user-facing
+                -- but is read from the saved table if an old value is present.
+                if LegacyVendorDB.strictSeasonalIlvlFloor == 620 then
+                    LegacyVendorDB.strictSeasonalIlvlFloor = nil
+                end
+
                 -- One-time migration: an existing save may still have the old red
                 -- highlight color baked in from before the light-purple redesign.
                 -- Upgrade it if it looks untouched (exactly the old default); leave
