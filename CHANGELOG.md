@@ -14,7 +14,7 @@ itself. Everything below is new unless marked otherwise.
 
 **Protection**
 - A plain item-level ceiling: never sell gear at or above a level you choose
-  (default 620). Unlike the Mythic+ guard, this does not depend on identifying an
+  (default 285, tuned to the current item level scale). Unlike the Mythic+ guard, this does not depend on identifying an
   item's expansion or its source - it only asks how good the item is - which makes it
   a dependable backstop when the game reports nothing useful about where something
   came from. It reads the item's effective level, so legacy gear scaled up by
