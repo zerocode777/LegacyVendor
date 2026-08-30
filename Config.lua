@@ -858,14 +858,27 @@ local function CreateSimpleConfig()
     end
 
     -- Muted "you are not there yet" line shown in place of the sections still ahead.
-    local function AddGateHint(text)
+    -- Takes an optional action so the message can fix the thing it is describing
+    -- instead of leaving the user at a dead end.
+    local function AddGateHint(text, actionLabel, onAction)
         local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         fs:SetPoint("TOPLEFT", 44, yOffset)
         fs:SetPoint("TOPRIGHT", content, "TOPRIGHT", -14, yOffset)
         fs:SetJustifyH("LEFT")
         fs:SetWordWrap(true)
         fs:SetText("|cFF7F7F7F" .. text .. "|r")
-        yOffset = yOffset - 34
+        yOffset = yOffset - (fs:GetStringHeight() or 14) - 10
+
+        if actionLabel and onAction then
+            local btn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+            btn:SetPoint("TOPLEFT", 44, yOffset)
+            btn:SetSize(230, 24)
+            btn:SetText(actionLabel)
+            btn:SetScript("OnClick", onAction)
+            yOffset = yOffset - 30
+        end
+
+        yOffset = yOffset - 8
     end
 
     -- STEP 1: expansions. Always visible - everything else depends on it.
@@ -883,9 +896,11 @@ local function CreateSimpleConfig()
     elseif LegacyVendorDB.sellMode ~= "matching" then
         -- In "sell everything" mode the detail filters genuinely do not run, so
         -- rendering them greyed-out was just noise. Say so instead.
-        AddGateHint("\"Sell EVERYTHING from enabled expansions\" is on, so the detailed "
-            .. "filters are not used. Switch to \"Only sell items MATCHING my filters\" "
-            .. "in General Settings above to walk through them.")
+        AddGateHint("You are in \"Everything from those expansions\" mode, so the detailed "
+            .. "filters below do not apply - every legacy item from the expansions above "
+            .. "will sell. Switch modes to pick rarities, bind types, gear slots and the rest.",
+            "Let me choose filters instead",
+            function() SetMode("matching") end)
 
     else
         AddSep()

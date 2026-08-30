@@ -2270,7 +2270,7 @@ UpdateBagHighlightsBody = function()
         end
     end
 
-    local applied, missing, verified = 0, 0, 0
+    local applied, missing, verified, offscreen = 0, 0, 0, 0
     local globalEnumList, legacyNameList
 
     if LegacyVendorDB and LegacyVendorDB.debug then
@@ -2313,6 +2313,18 @@ UpdateBagHighlightsBody = function()
             end
 
             if shown then
+                -- A button can be "visible" yet sit outside the bag window's scroll
+                -- viewport - EllesmereUI lays its list out past the screen edge, so
+                -- these come back with negative screen coordinates. The highlight is
+                -- applied correctly; the player just cannot see it without scrolling,
+                -- so it is counted and surfaced rather than silently lost.
+                local cx, cy = button:GetCenter()
+                local sw = UIParent and UIParent:GetWidth() or 0
+                local sh = UIParent and UIParent:GetHeight() or 0
+                if not cx or not cy or cx < 0 or cy < 0 or cx > sw or cy > sh then
+                    offscreen = offscreen + 1
+                end
+
                 local ok, err = pcall(ApplyHighlight, button)
                 if ok then
                     applied = applied + 1
@@ -2334,9 +2346,11 @@ UpdateBagHighlightsBody = function()
         end
     end
 
+    addon.highlightOffscreenCount = offscreen
+
     if LegacyVendorDB and LegacyVendorDB.debug then
-        DebugPrint(("Highlight pass: %d sellable, %d highlighted (%d icon-verified), %d without a visible button (source=%s, buttons=%d)")
-            :format(#items, applied, verified, missing, tostring(customSource), customScanned or 0))
+        DebugPrint(("Highlight pass: %d sellable, %d highlighted (%d icon-verified), %d off-screen, %d without a visible button (source=%s, buttons=%d)")
+            :format(#items, applied, verified, offscreen, missing, tostring(customSource), customScanned or 0))
     end
 end
 
@@ -2681,6 +2695,16 @@ local function CreateSellButton()
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("|cFFFFD100LegacyVendor|r")
         GameTooltip:AddLine("Click to sell legacy items", 1, 1, 1)
+
+        -- Explain the difference between the count on this button and the number of
+        -- highlights actually on screen, rather than leaving it looking like a bug.
+        local off = addon.highlightOffscreenCount or 0
+        if off > 0 and LegacyVendorDB and LegacyVendorDB.highlightItems then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine(("|cFFFFCC00%d of these are further down in your bags|r"):format(off), 1, 1, 1, true)
+            GameTooltip:AddLine("Scroll your bags to see them highlighted.", 0.7, 0.7, 0.7, true)
+        end
+
         GameTooltip:Show()
     end)
     
