@@ -829,6 +829,34 @@ local function CreateSimpleConfig()
     -- ==================================================
     local AnyTrue = addon.Sections.AnyTrue
 
+    -- Which sections the flow shows depends on these four answers, and they are
+    -- evaluated while the panel is being built. So a chip that changes one of them
+    -- has to rebuild, or the step it unlocks never appears - which is exactly what
+    -- broke when the flow was introduced. Compare a signature before and after so
+    -- only gate-changing clicks pay for a rebuild; every other chip just refreshes
+    -- the sentence and count in place.
+    local function GateSignature()
+        return table.concat({
+            tostring(AnyTrue(LegacyVendorDB.expansions)),
+            tostring(AnyTrue(LegacyVendorDB.equipSlots)),
+            tostring(AnyTrue(LegacyVendorDB.itemTypes)),
+            tostring(LegacyVendorDB.sellMode),
+        }, "|")
+    end
+
+    -- The signature this panel was BUILT for. A chip runs set() before onChange, so
+    -- sampling "before" inside the handler would already reflect the change and
+    -- never differ; comparing against what is currently on screen is the correct
+    -- test for "the visible sections are now stale".
+    local builtGateSignature = GateSignature()
+
+    local function OnGatingFilterChanged()
+        RefreshLiveSummary()
+        if GateSignature() ~= builtGateSignature then
+            RefreshConfigFrame()
+        end
+    end
+
     -- Muted "you are not there yet" line shown in place of the sections still ahead.
     local function AddGateHint(text)
         local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -845,7 +873,7 @@ local function CreateSimpleConfig()
         "Everything below narrows this. Current content is always protected.", "expansions")
     SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, RefreshLiveSummary, nil, RefreshConfigFrame)
+    yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, OnGatingFilterChanged, nil, RefreshConfigFrame)
 
     local haveExpansion = AnyTrue(LegacyVendorDB.expansions)
 
@@ -865,7 +893,7 @@ local function CreateSimpleConfig()
         -- STEP 2: the branch point.
         AddHeader("|cFFFFD100Step 2 - What kinds of items?|r",
             "Pick one or both. Your choice decides which lists appear next.", "types")
-        yOffset = addon.Sections.RenderItemKinds(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+        yOffset = addon.Sections.RenderItemKinds(content, yOffset, OnGatingFilterChanged, detailFrames, RefreshConfigFrame)
 
         local wantGear = AnyTrue(LegacyVendorDB.equipSlots)
         local wantOther = AnyTrue(LegacyVendorDB.itemTypes)
@@ -878,7 +906,7 @@ local function CreateSimpleConfig()
                 AddSep()
                 AddHeader("|cFFFFD100Step 3 - Which gear slots?|r",
                     "Equippable items must match one of these.", "slots")
-                yOffset = addon.Sections.RenderEquipSlots(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+                yOffset = addon.Sections.RenderEquipSlots(content, yOffset, OnGatingFilterChanged, detailFrames, RefreshConfigFrame)
             end
 
             -- STEP 3b: only when non-gear is in scope.
@@ -886,7 +914,7 @@ local function CreateSimpleConfig()
                 AddSep()
                 AddHeader("|cFFFFD100Step " .. (wantGear and "3b" or "3") .. " - Which other items?|r",
                     "Crafting mats and quest items stay off until you pick them here.", "types")
-                yOffset = addon.Sections.RenderItemTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
+                yOffset = addon.Sections.RenderItemTypes(content, yOffset, OnGatingFilterChanged, detailFrames, RefreshConfigFrame)
             end
 
             AddSep()
