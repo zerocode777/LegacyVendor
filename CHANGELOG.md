@@ -80,6 +80,10 @@ itself. Everything below is new unless marked otherwise.
   source at all - so the item-level checks that catch scaled legacy gear never ran.
   Those checks no longer depend on source detection, which also means future seasonal
   rotations are handled without waiting for an addon update.
+- The item level thresholds behind Mythic+ protection were left on the pre-squish
+  scale, where current gear sat in the hundreds. Nothing could reach them any more, so
+  every item-level check silently never fired. They are now set against the current
+  scale.
 - Mythic+ protection was also being bypassed entirely whenever "Sell everything from
   those expansions" was active with the current expansion ticked - which is the
   default mode, so for many setups the option did nothing at all while appearing to

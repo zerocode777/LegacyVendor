@@ -30,6 +30,13 @@ end
 -- almost certainly scaled up by current-season M+ bonus IDs.
 -- NOTE: WoD (5) and Legion (6) ceilings are ABOVE current content ilvl due to
 -- pre-squish inflation — rely on SEASONAL_LEGACY_DUNGEON_INSTANCES for those.
+-- WARNING: these are PRE-SQUISH values from before Midnight rescaled item levels.
+-- On the current scale (character gear in the high 200s) nothing reaches them, so
+-- this signal does not currently fire for any item. It is retained because it can
+-- only ever ADD protection, never remove it, and because the numbers become correct
+-- again for anyone still on an older client. The working guard on live is the
+-- absolute ceiling in Settings (highIlvlThreshold), which is scale-independent
+-- because the player sets it against gear they can actually see.
 addon.EXPANSION_ILVL_CEILING = {
     [0] = 90,    -- Classic (Naxxramas 40-man)
     [1] = 170,   -- The Burning Crusade (Sunwell Plateau)
@@ -64,7 +71,9 @@ addon.SEASONAL_LEGACY_DUNGEON_INSTANCES = {
 -- Hard floor used by strict seasonal protection.
 -- If a legacy item reaches this effective ilvl, treat it as current-season scaled
 -- content and never sell it.
-addon.STRICT_SEASONAL_ILVL_FLOOR = 620
+-- Current scale, not a historical one. Midnight character gear is in the high 200s,
+-- so anything a legacy item scales to at/above this is current-season content.
+addon.STRICT_SEASONAL_ILVL_FLOOR = 260
 
 -- Item Rarities (Quality)
 addon.RARITIES = {
@@ -216,7 +225,11 @@ local defaults = {
     -- Expansion-independent safety net. Uses EFFECTIVE item level, so scaled gear is
     -- judged on what it actually is rather than what it originally dropped as.
     protectHighIlvl = true,
-    highIlvlThreshold = 620,
+    -- Tuned to the CURRENT item level scale, not a historical one. Midnight runs in
+    -- the high 200s (character gear observed at 266-289), so 285 sits just under
+    -- current-content gear. Raise it after an item level squish, lower it if current
+    -- content starts dropping below this.
+    highIlvlThreshold = 285,
     debug = false,
     sellDelay = 0.2, -- Delay between sells to avoid throttling
     itemSources = {}, -- Source filter settings (vendor, crafted, dropped, etc.)
@@ -711,7 +724,9 @@ local function IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItem
 
     -- Signal 3: large scaling delta between base and effective item level.
     -- Current-season scaling bonuses typically create a large gap.
-    if baseItemLevel and baseItemLevel > 0 and (effectiveIlvl - baseItemLevel) >= 120 then
+    -- Threshold is proportional to the item level scale in use; on the current
+    -- (squished) scale a 120-point gap is impossible, so this never fired.
+    if baseItemLevel and baseItemLevel > 0 and (effectiveIlvl - baseItemLevel) >= 40 then
         DebugPrint("Seasonal protection: scaled +",
             effectiveIlvl - baseItemLevel, "above base", itemLink)
         return true

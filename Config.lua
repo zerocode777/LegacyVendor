@@ -568,15 +568,20 @@ local function CreateSimpleConfig()
             RefreshSummary()
         end, true)
 
-    -- Threshold sits on the same visual row as its checkbox.
+    -- On its own row beneath the checkbox. Sharing the checkbox's row meant the box
+    -- landed on top of the label text, which varies in width by locale and font.
     do
+        local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        lbl:SetPoint("TOPLEFT", 46, yOffset - 2)
+        lbl:SetText("|cFF888888Item level limit:|r")
+
         local box = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
         box:SetSize(60, 20)
-        box:SetPoint("TOPLEFT", 300, yOffset + 26)
+        box:SetPoint("LEFT", lbl, "RIGHT", 12, 0)
         box:SetAutoFocus(false)
         box:SetNumeric(true)
         box:SetMaxLetters(4)
-        box:SetText(tostring(LegacyVendorDB.highIlvlThreshold or 620))
+        box:SetText(tostring(LegacyVendorDB.highIlvlThreshold or 285))
 
         local function Commit(self)
             local v = tonumber(self:GetText()) or 0
@@ -589,13 +594,15 @@ local function CreateSimpleConfig()
         box:SetScript("OnEnterPressed", Commit)
         box:SetScript("OnEditFocusLost", Commit)
         box:SetScript("OnEscapePressed", function(self)
-            self:SetText(tostring(LegacyVendorDB.highIlvlThreshold or 620))
+            self:SetText(tostring(LegacyVendorDB.highIlvlThreshold or 285))
             self:ClearFocus()
         end)
 
         local tip = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        tip:SetPoint("LEFT", box, "RIGHT", 6, 0)
-        tip:SetText("|cFF888888and above|r")
+        tip:SetPoint("LEFT", box, "RIGHT", 8, 0)
+        tip:SetText("|cFF888888and above is never sold|r")
+
+        yOffset = yOffset - 26
     end
 
     CreateCheckbox(content, "Protect current-season Mythic+ gear  |cFF44FF44(recommended)|r",
