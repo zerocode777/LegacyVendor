@@ -223,6 +223,7 @@ local defaults = {
     protectUncollected = true, -- Never sell uncollected appearances/mounts/toys/pets
     showTooltipInfo = true, -- Add a "will sell / keeping - why" line to item tooltips
     stats = { totalCopper = 0, totalItems = 0, byExpansion = {}, firstSale = nil, lastSale = nil },
+    autoConfirmTradeTimer = false, -- Auto-accept "will become non-tradeable" prompts while selling
     onlySellLowerIlvl = false, -- Only sell equippable items whose ilvl is lower than the currently equipped item
     strictSeasonalProtection = true, -- Hard-protect current-season scaled legacy dungeon items
     expansionSellAllMode = true, -- Checked expansions sell everything from that expansion
@@ -2538,14 +2539,90 @@ local function RecordSale(item)
 end
 addon.RecordSale = RecordSale
 
+-- The item handed to UseContainerItem on the previous tick, awaiting verification.
+local pendingSale = nil
+-- Items the game refused to sell without a manual confirmation.
+local blockedSales = {}
+addon.blockedSales = blockedSales
+
+-- UseContainerItem reports nothing about whether the sale actually happened, and a
+-- pcall around it only catches Lua errors. A rare item still inside its group-trade
+-- window raises a Blizzard confirmation ("will make it non-tradeable") that silently
+-- stops the sale, so "the call did not error" is not evidence of anything. The only
+-- reliable test is whether the item left the slot.
+local function VerifyPendingSale()
+    if not pendingSale then return end
+
+    local item = pendingSale
+    pendingSale = nil
+
+    local info = C_Container.GetContainerItemInfo(item.bag, item.slot)
+    local stillThere = info and info.hyperlink and info.hyperlink == item.link
+
+    if stillThere then
+        blockedSales[#blockedSales + 1] = item
+        DebugPrint("NOT sold (still in bag):", item.link or "?", "bag=", item.bag, "slot=", item.slot)
+    else
+        itemsSoldCount = itemsSoldCount + 1
+        sessionSoldCopper = sessionSoldCopper + (item.price or 0)
+        RecordSale(item)
+        DebugPrint("Confirmed sold:", item.link or "?")
+    end
+end
+
+-- WoW raises "selling this will make it non-tradeable, even if you buy it back"
+-- for loot still inside its group-trade window. That prompt exists so a player does
+-- not vendor something a raidmate could still be given, so it is opt-in and off by
+-- default: accepting it on someone's behalf removes a warning the game deliberately
+-- showed them. Only ever acts during one of our own sell runs.
+local function TryAutoConfirmTradeTimer()
+    if not isSelling then return end
+    if not (LegacyVendorDB and LegacyVendorDB.autoConfirmTradeTimer) then return end
+
+    local count = STATICPOPUP_NUMDIALOGS or 4
+    for i = 1, count do
+        local dialog = _G["StaticPopup" .. i]
+        if dialog and dialog:IsShown() and type(dialog.which) == "string"
+            and dialog.which:find("TRADE_TIMER", 1, true) then
+            DebugPrint("Auto-confirming trade-timer prompt:", dialog.which)
+            if StaticPopup_OnClick then
+                StaticPopup_OnClick(dialog, 1)
+            elseif dialog.button1 and dialog.button1:IsShown() then
+                dialog.button1:Click()
+            end
+            return true
+        end
+    end
+end
+
 local function SellNextItem()
+    -- A confirmation from the previous attempt may still be on screen.
+    TryAutoConfirmTradeTimer()
+
+    -- Settle the previous attempt before doing anything else.
+    VerifyPendingSale()
+
     if not isSelling or #itemsToSell == 0 then
         isSelling = false
         if itemsSoldCount > 0 and LegacyVendorDB.showSummary then
             Print(string.format("Sold %d legacy item(s) for %s", itemsSoldCount, FormatMoney(sessionSoldCopper)))
-        elseif itemsSoldCount == 0 and LegacyVendorDB.showSummary then
+        elseif itemsSoldCount == 0 and #blockedSales == 0 and LegacyVendorDB.showSummary then
             Print("No items were sold - items may have been moved or filters changed")
         end
+
+        -- Never claim an item sold while it is still sitting in the bag.
+        if #blockedSales > 0 then
+            Print(string.format("|cFFFFCC00%d item(s) still need confirming:|r", #blockedSales))
+            for i, it in ipairs(blockedSales) do
+                if i <= 5 then print("   " .. (it.link or "?")) end
+            end
+            if #blockedSales > 5 then
+                print(string.format("   ...and %d more", #blockedSales - 5))
+            end
+            Print("|cFF888888WoW warns before selling items still tradeable to your group. Click Sell again and accept, or enable auto-confirm in Settings.|r")
+        end
+
+        wipe(blockedSales)
         itemsSoldCount = 0
         sessionSoldCopper = 0
         totalGoldEarned = 0
@@ -2578,13 +2655,9 @@ local function SellNextItem()
         end)
         
         if success then
-            itemsSoldCount = itemsSoldCount + 1
-            -- totalGoldEarned previously held the value of the WHOLE queue and was
-            -- never decremented, so the summary reported queued value rather than
-            -- what actually sold. Accumulate confirmed sales instead.
-            sessionSoldCopper = sessionSoldCopper + (item.price or 0)
-            RecordSale(item)
-            DebugPrint("  Sold successfully!")
+            -- Counted only once the slot is confirmed empty, on the next tick.
+            item.link = containerInfo.hyperlink
+            pendingSale = item
         else
             Print("  FAILED to sell: " .. (err or "unknown error"))
         end
@@ -2600,7 +2673,9 @@ end
 -- Start selling process
 local function StartSelling()
     if isSelling then return end
-    
+
+    wipe(blockedSales)
+    pendingSale = nil
     ScanBags()
     
     -- Update button to reflect actual scan result

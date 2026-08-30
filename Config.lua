@@ -555,6 +555,14 @@ local function CreateSimpleConfig()
         function() return LegacyVendorDB.strictSeasonalProtection ~= false end,
         function(v) LegacyVendorDB.strictSeasonalProtection = v end, true)
 
+    CreateCheckbox(content, "Auto-confirm \"will become non-tradeable\" prompts",
+        "WoW warns before selling loot that is still tradeable to your group, which stops "
+        .. "those items selling until you click Okay. Turn this on to accept that prompt "
+        .. "automatically during a sell run. Off by default, because it removes a warning "
+        .. "the game deliberately shows you.",
+        function() return LegacyVendorDB.autoConfirmTradeTimer end,
+        function(v) LegacyVendorDB.autoConfirmTradeTimer = v end)
+
     CreateCheckbox(content, "Ask me before selling",
         "Show a confirmation dialog listing what is about to be sold.",
         function() return LegacyVendorDB.confirmSell end,
