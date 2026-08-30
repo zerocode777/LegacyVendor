@@ -2543,11 +2543,6 @@ local function SellNextItem()
         isSelling = false
         if itemsSoldCount > 0 and LegacyVendorDB.showSummary then
             Print(string.format("Sold %d legacy item(s) for %s", itemsSoldCount, FormatMoney(sessionSoldCopper)))
-            local st = LegacyVendorDB.stats
-            if st and (st.totalCopper or 0) > 0 then
-                Print(string.format("|cFF888888Reclaimed %s from old clutter so far. /lv stats|r",
-                    FormatMoney(st.totalCopper)))
-            end
         elseif itemsSoldCount == 0 and LegacyVendorDB.showSummary then
             Print("No items were sold - items may have been moved or filters changed")
         end
@@ -2618,21 +2613,17 @@ local function StartSelling()
         end
     end
     
-    Print(string.format("Starting sell: found %d items", #itemsToSell))
-    
+    DebugPrint(string.format("Starting sell: found %d items", #itemsToSell))
+
     if #itemsToSell == 0 then
-        Print("No legacy items to sell - check your filter settings with /lv debug")
+        Print("Nothing matches your filters right now.")
         return
     end
-    
-    -- List items that will be sold
+
+    -- The full list goes to the debug log only. On screen it was duplicating the
+    -- confirmation dialog, the Sell (N) button and the bag highlights all at once.
     for i, item in ipairs(itemsToSell) do
-        if i <= 5 then
-            Print(string.format("  %d. %s", i, item.link or "Unknown"))
-        end
-    end
-    if #itemsToSell > 5 then
-        Print(string.format("  ... and %d more", #itemsToSell - 5))
+        DebugPrint(string.format("  %d. %s", i, item.link or "Unknown"))
     end
     
     if LegacyVendorDB.confirmSell then
@@ -2744,7 +2735,11 @@ local function OnEvent(self, event, ...)
                 C_Timer.After(0.3, function()
                     local _, _, items = CountSellable()
                     if #items > 0 then
-                        Print(string.format("Found %d legacy item(s) to sell. Click the [Sell Legacy] button or use /lv sell", #items))
+                        -- Short, and only if the user wants chat output at all: the
+                        -- Sell (N) button and the bag highlights already say this.
+                        if LegacyVendorDB.showSummary then
+                            Print(string.format("%d item(s) ready to sell.", #items))
+                        end
                     end
                 end)
             end
