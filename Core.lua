@@ -1087,8 +1087,28 @@ end
 
 -- Read-only count for UI. Safe to call at any time, including mid-sell, because it
 -- never touches itemsToSell / totalGoldEarned.
-local function CountSellable()
+--
+-- Cached for a fraction of a second: a bag addon can emit a burst of refreshes for
+-- one user action, and re-scanning every slot per refresh would reintroduce the
+-- exact cost we removed earlier. Bag and filter changes drop the cache explicitly.
+local sellableCache, sellableCacheAt = nil, 0
+local SELLABLE_CACHE_TTL = 0.25
+
+local function InvalidateSellableCache()
+    sellableCache = nil
+end
+addon.InvalidateSellableCache = InvalidateSellableCache
+
+local function CountSellable(allowCache)
+    local now = GetTime and GetTime() or 0
+    if allowCache and sellableCache and (now - sellableCacheAt) < SELLABLE_CACHE_TTL then
+        local c = sellableCache
+        return #c.items, c.gold, c.items
+    end
+
     local items, goldTotal = CollectSellableItems()
+    sellableCache = { items = items, gold = goldTotal }
+    sellableCacheAt = now
     return #items, goldTotal, items
 end
 addon.CountSellable = CountSellable
@@ -2198,7 +2218,7 @@ UpdateBagHighlightsBody = function()
     -- chat summary walked bag slots - two different traversals that could disagree,
     -- which is exactly how you got "Sell (6)" next to two highlighted items.
     -- Driving both from the same list makes them agree by construction.
-    local _, _, items = CountSellable()
+    local _, _, items = CountSellable(true)
 
     if #items == 0 then
         if LegacyVendorDB and LegacyVendorDB.debug then
@@ -2299,6 +2319,50 @@ UpdateBagHighlightsBody = function()
             :format(#items, applied, verified, missing, tostring(customSource), customScanned or 0))
     end
 end
+
+-- Bag replacement addons recycle their item buttons on every re-render, which
+-- silently invalidates every highlight we placed - the button we decorated now
+-- shows a different item, or is parked back in the pool. Nothing told us to redo
+-- the pass, so highlights drifted out of sync with the Sell (N) count after any
+-- scroll, category change or bag refresh.
+local bagRefreshHooked = false
+
+local function InstallBagRefreshHooks()
+    if bagRefreshHooked then return end
+
+    local hookedAny = false
+
+    -- EllesmereUI: RefreshBags() is its public rebuild entry point.
+    local euiWindow = _G.EUI_BagsWindow
+    if euiWindow and euiWindow.RefreshBags then
+        hooksecurefunc(euiWindow, "RefreshBags", function()
+            if LegacyVendorDB and LegacyVendorDB.enabled and LegacyVendorDB.highlightItems
+                and MerchantFrame and MerchantFrame:IsShown() then
+                if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+            end
+        end)
+        hookedAny = true
+    end
+
+    -- Blizzard's own container frames, for players not running a bag addon.
+    if type(_G.ContainerFrame_Update) == "function" then
+        hooksecurefunc("ContainerFrame_Update", function()
+            if LegacyVendorDB and LegacyVendorDB.enabled and LegacyVendorDB.highlightItems
+                and MerchantFrame and MerchantFrame:IsShown() then
+                if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+            end
+        end)
+        hookedAny = true
+    end
+
+    -- Only latch once something was actually there to hook; the bag addon may not
+    -- have created its frames yet the first time a merchant opens.
+    if hookedAny then
+        bagRefreshHooked = true
+        DebugPrint("Installed bag-refresh hooks.")
+    end
+end
+addon.InstallBagRefreshHooks = InstallBagRefreshHooks
 
 local function ScheduleHighlightUpdate()
     if highlightUpdatePending then
@@ -2512,6 +2576,8 @@ local function OnEvent(self, event, ...)
     elseif event == "MERCHANT_SHOW" then
         if LegacyVendorDB and LegacyVendorDB.enabled then
             -- Show/update the sell button on merchant frame
+            InstallBagRefreshHooks()
+            InvalidateSellableCache()
             addon.UpdateMerchantButton()
             addon.ScheduleHighlightUpdate()
             StartHighlightRetries()
@@ -2557,6 +2623,7 @@ local function OnEvent(self, event, ...)
         if LegacyVendorDB and LegacyVendorDB.debug and merchantShown then
             DebugPrint("Bag event:", event, "-> recount queued")
         end
+        InvalidateSellableCache()
         if LegacyVendorDB and LegacyVendorDB.enabled and merchantShown then
             addon.ScheduleMerchantButtonUpdate()
             addon.ScheduleHighlightUpdate()
