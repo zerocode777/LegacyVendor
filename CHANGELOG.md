@@ -71,6 +71,10 @@ itself. Everything below is new unless marked otherwise.
   source at all - so the item-level checks that catch scaled legacy gear never ran.
   Those checks no longer depend on source detection, which also means future seasonal
   rotations are handled without waiting for an addon update.
+- Mythic+ protection was also being bypassed entirely whenever "Sell everything from
+  those expansions" was active with the current expansion ticked - which is the
+  default mode, so for many setups the option did nothing at all while appearing to
+  be on. It is now an unconditional hard stop, as its description always claimed.
 
 ### Notes
 - Existing settings are carried over. Nothing new sells without you enabling it, and

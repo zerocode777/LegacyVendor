@@ -910,12 +910,16 @@ local function ShouldSellItem(bag, slot)
     -- blocks current-season scaled legacy dungeon gear.
     if db.strictSeasonalProtection ~= false then
         if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, itemInfo[4], classID, equipLoc, bag, slot) then
-            -- Explicit opt-in: if current expansion is checked in meta sell-all mode,
-            -- allow current-season dungeon items to flow through as current expansion.
-            if not (db.sellMode == "everything" and db.expansions and db.expansions[addon.CURRENT_EXPANSION]) then
-                DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
-                return false, "current-season Mythic+ gear"
-            end
+            -- No exceptions. This used to be bypassed whenever the user was in
+            -- "sell everything" mode with the current expansion ticked - which is
+            -- the DEFAULT mode, so the protection silently did nothing for a large
+            -- share of users despite the setting reading as on. The option promises
+            -- "overrides every sell filter", so it has to actually do that; a
+            -- safeguard with a hidden exception is worse than no safeguard, because
+            -- people rely on it. Anyone who genuinely wants this gear sold can turn
+            -- the protection off, which is explicit and visible.
+            DebugPrint("Strict protection: skipping seasonal legacy item:", itemLink)
+            return false, "current-season Mythic+ gear"
         end
     end
     
