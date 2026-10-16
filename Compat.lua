@@ -91,6 +91,8 @@ if not C_Item.GetItemInfo then
     C_Item.GetItemInfo = function(itemID)
         return GetItemInfo(itemID)
     end
+elseif not GetItemInfo then
+    GetItemInfo = C_Item.GetItemInfo
 end
 
 if not C_Item.GetItemID then
@@ -242,7 +244,9 @@ function addon.GetItemExpansionCompat(itemID)
         return 0 -- Everything is Classic
     end
     
-    local itemInfo = { GetItemInfo(itemID) }
+    local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+    if not getInfo then return nil end
+    local itemInfo = { getInfo(itemID) }
     if not itemInfo[1] then return nil end
     
     -- Try to get expansion ID (retail only, position 15)
