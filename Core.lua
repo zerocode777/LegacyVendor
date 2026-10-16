@@ -1264,6 +1264,18 @@ local highlightRetryCount = 0
 local highlightRetryToken = 0
 local ClearHighlightVisualParts -- assigned near the highlight style implementations below
 
+local function IsBankContextOpen()
+    if BankFrame and BankFrame.IsVisible and BankFrame:IsVisible() then return true end
+    if _G.BankPanel and _G.BankPanel.IsVisible and _G.BankPanel:IsVisible() then return true end
+    if _G.AccountBankPanel and _G.AccountBankPanel.IsVisible and _G.AccountBankPanel:IsVisible() then return true end
+    return false
+end
+
+local function IsHighlightContextShown()
+    if MerchantFrame and MerchantFrame:IsShown() then return true end
+    return IsBankContextOpen()
+end
+
 local function StartHighlightRetries()
     highlightRetryToken = highlightRetryToken + 1
     highlightRetryCount = 0
@@ -1276,7 +1288,7 @@ local function StartHighlightRetries()
         if not LegacyVendorDB or not LegacyVendorDB.enabled or not LegacyVendorDB.highlightItems then
             return
         end
-        if not MerchantFrame or not MerchantFrame:IsShown() then
+        if not IsHighlightContextShown() then
             return
         end
 
@@ -1341,6 +1353,12 @@ local function GetButtonBagAndSlot(button)
     if button.GetBagID then
         bag = button:GetBagID()
     end
+    if (bag == nil or bag == 0) and button.GetBankTabID then
+        local ok, tabID = pcall(button.GetBankTabID, button)
+        if ok and tabID and tabID > 0 then
+            bag = tabID
+        end
+    end
     if not bag and button.bagID ~= nil then
         bag = button.bagID
     end
@@ -1360,7 +1378,15 @@ local function GetButtonBagAndSlot(button)
             or button:GetAttribute("bagid")
     end
 
-    slot = button:GetID()
+    if button.GetContainerSlotID then
+        local ok, cSlot = pcall(button.GetContainerSlotID, button)
+        if ok and cSlot and cSlot > 0 then
+            slot = cSlot
+        end
+    end
+    if not slot or slot == 0 then
+        slot = button:GetID()
+    end
     if (not slot or slot == 0) and button.GetSlotAndBagID then
         local s = button:GetSlotAndBagID()
         slot = s
@@ -2365,6 +2391,57 @@ local function CollectCustomBagButtons()
         end
     end
 
+    -- Collect Bank and Warband Bank item buttons when the bank is open.
+    local function CollectBankButtons(outButtons, seenButtons)
+        local count = 0
+        local function AddBtn(btn)
+            if btn and not seenButtons[btn] then
+                seenButtons[btn] = true
+                outButtons[#outButtons + 1] = btn
+                count = count + 1
+            end
+        end
+        local function ScanPanel(panel)
+            if not panel then return end
+            if panel.EnumerateValidItems then
+                local ok, iter, s, v = pcall(panel.EnumerateValidItems, panel)
+                if ok and type(iter) == "function" then
+                    for a, b in iter, s, v do
+                        local btn = (type(b) == "table" and b) or (type(a) == "table" and a)
+                        AddBtn(btn)
+                    end
+                end
+            end
+            if panel.itemButtonPool and panel.itemButtonPool.EnumerateActive then
+                local ok, iter, s, v = pcall(panel.itemButtonPool.EnumerateActive, panel.itemButtonPool)
+                if ok and type(iter) == "function" then
+                    for a, b in iter, s, v do
+                        local btn = (type(b) == "table" and b) or (type(a) == "table" and a)
+                        AddBtn(btn)
+                    end
+                end
+            end
+            count = count + CollectFrameTreeButtons(panel, outButtons, seenButtons, 8)
+        end
+
+        ScanPanel(_G.BankFrame)
+        ScanPanel(_G.BankPanel)
+        ScanPanel(_G.AccountBankPanel)
+        ScanPanel(_G.BankSlotsFrame)
+        ScanPanel(_G.ReagentBankFrame)
+        ScanPanel(_G.Baganator_SingleViewBankViewFrameblizzard)
+        ScanPanel(_G.BetterBagsBank)
+        return count
+    end
+
+    if IsBankContextOpen() then
+        local bankScanned = CollectBankButtons(buttons, seen)
+        scanned = scanned + bankScanned
+        if bankScanned > 0 and source == "none" then
+            source = "bank"
+        end
+    end
+
     return buttons, source, scanned
 end
 
@@ -2376,14 +2453,14 @@ local function UpdateBagHighlights()
     if LegacyVendorDB and LegacyVendorDB.debug then
         DebugPrint("UpdateBagHighlights: enter, enabled=", tostring(LegacyVendorDB and LegacyVendorDB.enabled),
             "highlightItems=", tostring(LegacyVendorDB and LegacyVendorDB.highlightItems),
-            "merchantShown=", tostring(MerchantFrame and MerchantFrame:IsShown()))
+            "contextShown=", tostring(IsHighlightContextShown()))
     end
 
     if not LegacyVendorDB or not LegacyVendorDB.enabled or not LegacyVendorDB.highlightItems then
         return
     end
 
-    if not MerchantFrame or not MerchantFrame:IsShown() then
+    if not IsHighlightContextShown() then
         return
     end
 
@@ -2462,19 +2539,52 @@ function addon.ScrollToNextMatch()
     Print("Could not scroll your bag window - is it open?")
 end
 
+-- Collects sellable items from currently visible Bank and Warband Bank item buttons
+-- when the bank is open, so legacy items in bank/warbank tabs are highlighted just
+-- like bag items without impacting vendor selling (which only sells from bags 0..5).
+local function CollectBankSellableItems(customButtons)
+    local bankItems = {}
+    if not IsBankContextOpen() then
+        return bankItems
+    end
+
+    local seenBagSlot = {}
+    for _, btn in ipairs(customButtons or {}) do
+        if btn.IsVisible and btn:IsVisible() then
+            local b, sl = GetButtonBagAndSlot(btn)
+            if b ~= nil and sl ~= nil and sl > 0 and (b < 0 or b > 5) then
+                local key = b .. ":" .. sl
+                if not seenBagSlot[key] then
+                    seenBagSlot[key] = true
+                    local shouldSell, itemLink, count, price, expID = ShouldSellItem(b, sl)
+                    if shouldSell then
+                        bankItems[#bankItems + 1] = {
+                            bag = b,
+                            slot = sl,
+                            link = itemLink,
+                            count = count,
+                            price = price or 0,
+                            expansion = expID,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    return bankItems
+end
+
 UpdateBagHighlightsBody = function()
     -- The sellable list is AUTHORITATIVE. Previously this walked the bag addon's
     -- buttons and asked "should this one sell?", while the Sell (N) button and the
     -- chat summary walked bag slots - two different traversals that could disagree,
     -- which is exactly how you got "Sell (6)" next to two highlighted items.
     -- Driving both from the same list makes them agree by construction.
-    local _, _, items = CountSellable(true)
-
-    if #items == 0 then
-        if LegacyVendorDB and LegacyVendorDB.debug then
-            DebugPrint("Highlight pass: nothing sellable.")
-        end
-        return
+    local _, _, bagItems = CountSellable(true)
+    local items = {}
+    for _, it in ipairs(bagItems) do
+        items[#items + 1] = it
     end
 
     -- Index whatever buttons the active bag addon exposes by bag:slot, so the common
@@ -2518,6 +2628,17 @@ UpdateBagHighlightsBody = function()
                 end
             end
         end
+    end
+
+    for _, it in ipairs(CollectBankSellableItems(customButtons)) do
+        items[#items + 1] = it
+    end
+
+    if #items == 0 then
+        if LegacyVendorDB and LegacyVendorDB.debug then
+            DebugPrint("Highlight pass: nothing sellable.")
+        end
+        return
     end
 
     local applied, missing, verified, offscreen = 0, 0, 0, 0
@@ -2602,8 +2723,36 @@ end
 -- the pass, so highlights drifted out of sync with the Sell (N) count after any
 -- scroll, category change or bag refresh.
 local bagRefreshHooked = false
+local bankPanelHooked = {}
 
 local function InstallBagRefreshHooks()
+    for _, panelName in ipairs({ "BankFrame", "BankPanel", "AccountBankPanel" }) do
+        local panel = _G[panelName]
+        if panel and not bankPanelHooked[panel] then
+            bankPanelHooked[panel] = true
+            if panel.HookScript then
+                pcall(panel.HookScript, panel, "OnHide", function()
+                    C_Timer.After(0.05, function()
+                        if not IsHighlightContextShown() then
+                            StopHighlightRetries()
+                        end
+                        if addon.UpdateBagHighlights then addon.UpdateBagHighlights() end
+                    end)
+                end)
+            end
+            for _, method in ipairs({ "RefreshAllItemsForSelectedTab", "GenerateItemSlotsForSelectedTab", "RefreshBankPanel", "SelectTab" }) do
+                if type(panel[method]) == "function" then
+                    hooksecurefunc(panel, method, function()
+                        if LegacyVendorDB and LegacyVendorDB.enabled and LegacyVendorDB.highlightItems
+                            and IsHighlightContextShown() then
+                            if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
     if bagRefreshHooked then return end
 
     local hookedAny = false
@@ -2613,7 +2762,7 @@ local function InstallBagRefreshHooks()
     if euiWindow and euiWindow.RefreshBags then
         hooksecurefunc(euiWindow, "RefreshBags", function()
             if LegacyVendorDB and LegacyVendorDB.enabled and LegacyVendorDB.highlightItems
-                and MerchantFrame and MerchantFrame:IsShown() then
+                and IsHighlightContextShown() then
                 if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
             end
         end)
@@ -2624,7 +2773,7 @@ local function InstallBagRefreshHooks()
     if type(_G.ContainerFrame_Update) == "function" then
         hooksecurefunc("ContainerFrame_Update", function()
             if LegacyVendorDB and LegacyVendorDB.enabled and LegacyVendorDB.highlightItems
-                and MerchantFrame and MerchantFrame:IsShown() then
+                and IsHighlightContextShown() then
                 if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
             end
         end)
@@ -3021,24 +3170,42 @@ local function OnEvent(self, event, ...)
             addon.UpdateBagHighlights()
         end
 
+    elseif event == "BANKFRAME_OPENED" or event == "ACCOUNT_BANK_OPENED" then
+        if LegacyVendorDB and LegacyVendorDB.enabled then
+            InstallBagRefreshHooks()
+            InvalidateSellableCache()
+            addon.ScheduleHighlightUpdate()
+            StartHighlightRetries()
+        end
+
+    elseif event == "BANKFRAME_CLOSED" or event == "ACCOUNT_BANK_CLOSED" then
+        StopHighlightRetries()
+        if addon.UpdateBagHighlights then
+            addon.UpdateBagHighlights()
+        end
+
     elseif event == "TRANSMOG_COLLECTION_SOURCE_ADDED" or event == "TRANSMOG_COLLECTION_SOURCE_REMOVED"
         or event == "NEW_TOY_ADDED" or event == "NEW_MOUNT_ADDED" or event == "NEW_PET_ADDED" then
         ResetCollectibleCache()
-        if LegacyVendorDB and LegacyVendorDB.enabled and MerchantFrame and MerchantFrame:IsShown() then
-            addon.ScheduleMerchantButtonUpdate()
+        if LegacyVendorDB and LegacyVendorDB.enabled and IsHighlightContextShown() then
+            if MerchantFrame and MerchantFrame:IsShown() then
+                addon.ScheduleMerchantButtonUpdate()
+            end
             addon.ScheduleHighlightUpdate()
         end
 
-    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" then
-        local merchantShown = MerchantFrame and MerchantFrame:IsShown()
-        -- Only trace when the merchant is actually open. Logging every bag event
+    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "PLAYERBANKSLOTS_CHANGED" then
+        local contextShown = IsHighlightContextShown()
+        -- Only trace when a highlight context is actually open. Logging every bag event
         -- during normal play floods the export log into uselessness.
-        if LegacyVendorDB and LegacyVendorDB.debug and merchantShown then
+        if LegacyVendorDB and LegacyVendorDB.debug and contextShown then
             DebugPrint("Bag event:", event, "-> recount queued")
         end
         InvalidateSellableCache()
-        if LegacyVendorDB and LegacyVendorDB.enabled and merchantShown then
-            addon.ScheduleMerchantButtonUpdate()
+        if LegacyVendorDB and LegacyVendorDB.enabled and contextShown then
+            if MerchantFrame and MerchantFrame:IsShown() then
+                addon.ScheduleMerchantButtonUpdate()
+            end
             addon.ScheduleHighlightUpdate()
         end
     end
@@ -3218,12 +3385,33 @@ do
     -- filters need; hooking it covers bag, bank and most bag-addon tooltips.
     if GameTooltip and GameTooltip.SetBagItem then
         hooksecurefunc(GameTooltip, "SetBagItem", function(self, bag, slot)
+            self._lvLineAdded = true
             AppendSellLine(self, bag, slot)
         end)
     end
     if ItemRefTooltip and ItemRefTooltip.SetBagItem then
         hooksecurefunc(ItemRefTooltip, "SetBagItem", function(self, bag, slot)
+            self._lvLineAdded = true
             AppendSellLine(self, bag, slot)
+        end)
+    end
+    if GameTooltip and GameTooltip.HookScript then
+        GameTooltip:HookScript("OnTooltipCleared", function(self)
+            self._lvLineAdded = nil
+        end)
+    end
+    -- Modern BankPanel / AccountBankPanel buttons do not always go through SetBagItem,
+    -- so also hook TooltipDataProcessor to inspect the hovered item button's bag/tab & slot.
+    if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item then
+        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+            if tooltip ~= GameTooltip or tooltip._lvLineAdded then return end
+            local owner = tooltip.GetOwner and tooltip:GetOwner()
+            if not owner then return end
+            local b, sl = GetButtonBagAndSlot(owner)
+            if b ~= nil and sl ~= nil and sl > 0 then
+                tooltip._lvLineAdded = true
+                AppendSellLine(tooltip, b, sl)
+            end
         end)
     end
 end
@@ -3235,6 +3423,15 @@ frame:RegisterEvent("MERCHANT_SHOW")
 frame:RegisterEvent("MERCHANT_CLOSED")
 frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
+for _, ev in ipairs({
+    "BANKFRAME_OPENED",
+    "BANKFRAME_CLOSED",
+    "PLAYERBANKSLOTS_CHANGED",
+    "ACCOUNT_BANK_OPENED",
+    "ACCOUNT_BANK_CLOSED",
+}) do
+    pcall(frame.RegisterEvent, frame, ev)
+end
 -- Collection state changed: drop the cached "is this uncollected" answers so a newly
 -- learned appearance/mount/toy/pet stops being protected straight away.
 frame:RegisterEvent("TRANSMOG_COLLECTION_SOURCE_ADDED")
