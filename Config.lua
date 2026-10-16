@@ -445,8 +445,12 @@ local function CreateSimpleConfig()
 
     -- Single-column checkbox
     local function CreateCheckbox(parent, label, tooltip, getValue, setValue, refreshOnChange)
-        local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+        local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
         cb:SetPoint("TOPLEFT", 10, yOffset)
+        if not cb.Text then
+            cb.Text = cb.text or cb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            cb.Text:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+        end
         cb.Text:SetText(label)
         cb.tooltipText = tooltip
         AttachCheckboxTooltip(cb, label, tooltip)
@@ -464,8 +468,12 @@ local function CreateSimpleConfig()
     -- Two-column checkbox (alternates left/right, advances yOffset on right)
     local function CreateCheckbox2Col(parent, label, tooltip, getValue, setValue, refreshOnChange)
         local xPos = (col2_col == 0) and COL2_LEFT or COL2_RIGHT
-        local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+        local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
         cb:SetPoint("TOPLEFT", xPos, yOffset)
+        if not cb.Text then
+            cb.Text = cb.text or cb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            cb.Text:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+        end
         cb.Text:SetText(label)
         cb.tooltipText = tooltip
         AttachCheckboxTooltip(cb, label, tooltip)
@@ -745,34 +753,59 @@ local function CreateSimpleConfig()
             return id
         end
 
-        local dropdown = CreateFrame("Frame", "LegacyVendorHighlightStyleDropdown", content, "UIDropDownMenuTemplate")
-        dropdown:SetPoint("TOPLEFT", pickerLabel, "BOTTOMLEFT", -16, -2)
-        UIDropDownMenu_SetWidth(dropdown, 170)
+        local currentStyleId = LegacyVendorDB.highlightStyle or addon.DEFAULT_HIGHLIGHT_STYLE
+        local dropdown
+        if UIDropDownMenu_SetWidth and UIDropDownMenu_Initialize then
+            dropdown = CreateFrame("Frame", "LegacyVendorHighlightStyleDropdown", content, "UIDropDownMenuTemplate")
+            dropdown:SetPoint("TOPLEFT", pickerLabel, "BOTTOMLEFT", -16, -2)
+            UIDropDownMenu_SetWidth(dropdown, 170)
 
-        UIDropDownMenu_Initialize(dropdown, function(self, level)
-            for _, style in ipairs(addon.HIGHLIGHT_STYLES) do
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = style.name
-                info.value = style.id
-                info.checked = (LegacyVendorDB.highlightStyle == style.id)
-                info.func = function()
-                    LegacyVendorDB.highlightStyle = style.id
-                    UIDropDownMenu_SetSelectedValue(dropdown, style.id)
-                    UIDropDownMenu_SetText(dropdown, style.name)
+            UIDropDownMenu_Initialize(dropdown, function(self, level)
+                for _, style in ipairs(addon.HIGHLIGHT_STYLES) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = style.name
+                    info.value = style.id
+                    info.checked = (LegacyVendorDB.highlightStyle == style.id)
+                    info.func = function()
+                        LegacyVendorDB.highlightStyle = style.id
+                        UIDropDownMenu_SetSelectedValue(dropdown, style.id)
+                        UIDropDownMenu_SetText(dropdown, style.name)
+                        RebuildPreview()
+                        if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+                    end
+                    UIDropDownMenu_AddButton(info, level)
+                end
+            end)
+
+            UIDropDownMenu_SetSelectedValue(dropdown, currentStyleId)
+            UIDropDownMenu_SetText(dropdown, GetStyleName(currentStyleId))
+        else
+            dropdown = CreateFrame("Button", "LegacyVendorHighlightStyleDropdown", content, "UIPanelButtonTemplate")
+            dropdown:SetSize(180, 22)
+            dropdown:SetPoint("TOPLEFT", pickerLabel, "BOTTOMLEFT", 0, -4)
+            dropdown:SetText(GetStyleName(currentStyleId))
+            dropdown:SetScript("OnClick", function(self)
+                local cur = LegacyVendorDB.highlightStyle or addon.DEFAULT_HIGHLIGHT_STYLE
+                local nextIdx = 1
+                for idx, style in ipairs(addon.HIGHLIGHT_STYLES) do
+                    if style.id == cur then
+                        nextIdx = (idx % #addon.HIGHLIGHT_STYLES) + 1
+                        break
+                    end
+                end
+                local nextStyle = addon.HIGHLIGHT_STYLES[nextIdx]
+                if nextStyle then
+                    LegacyVendorDB.highlightStyle = nextStyle.id
+                    self:SetText(nextStyle.name)
                     RebuildPreview()
                     if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
                 end
-                UIDropDownMenu_AddButton(info, level)
-            end
-        end)
-
-        local currentStyleId = LegacyVendorDB.highlightStyle or addon.DEFAULT_HIGHLIGHT_STYLE
-        UIDropDownMenu_SetSelectedValue(dropdown, currentStyleId)
-        UIDropDownMenu_SetText(dropdown, GetStyleName(currentStyleId))
+            end)
+        end
 
         -- Color picker: a clickable swatch showing the current highlight color.
         local colorLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        colorLabel:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 16, -12)
+        colorLabel:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", UIDropDownMenu_SetWidth and 16 or 0, -12)
         colorLabel:SetText("Highlight Color:")
 
         local swatch = CreateFrame("Button", nil, content)

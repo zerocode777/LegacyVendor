@@ -2276,6 +2276,46 @@ local function CollectFrameTreeButtons(rootFrame, outButtons, seenButtons, maxDe
     return count
 end
 
+local function CollectBlizzardBagButtons(outButtons, seenButtons)
+    local count = 0
+    local function AddBtn(btn)
+        if btn and not seenButtons[btn] then
+            seenButtons[btn] = true
+            outButtons[#outButtons + 1] = btn
+            count = count + 1
+        end
+    end
+    local function ScanContainer(cf)
+        if not cf then return end
+        if cf.Items and type(cf.Items) == "table" then
+            for _, btn in ipairs(cf.Items) do AddBtn(btn) end
+        end
+        if cf.EnumerateValidItems then
+            local ok, iter, s, v = pcall(cf.EnumerateValidItems, cf)
+            if ok and type(iter) == "function" then
+                for _, btn in iter, s, v do AddBtn(btn) end
+            end
+        end
+        local name = cf.GetName and cf:GetName()
+        if name then
+            for i = 1, 48 do
+                AddBtn(_G[name .. "Item" .. i])
+            end
+        end
+    end
+    if type(_G.ContainerFrameUtil_EnumerateContainerFrames) == "function" then
+        local ok, iter, s, v = pcall(_G.ContainerFrameUtil_EnumerateContainerFrames)
+        if ok and type(iter) == "function" then
+            for _, cf in iter, s, v do ScanContainer(cf) end
+        end
+    end
+    ScanContainer(_G.ContainerFrameCombinedBags)
+    for i = 1, 13 do
+        ScanContainer(_G["ContainerFrame" .. i])
+    end
+    return count
+end
+
 local function CollectCustomBagButtons()
     local buttons = {}
     local seen = {}
@@ -2312,6 +2352,16 @@ local function CollectCustomBagButtons()
         end
         if scanned > 0 then
             source = "custom-bag-frame"
+        end
+    end
+
+    -- Always include Blizzard's default container frames so standard bags are
+    -- indexed directly without falling back to a full-UI EnumerateFrames() walk.
+    local blizzScanned = CollectBlizzardBagButtons(buttons, seen)
+    if blizzScanned > 0 then
+        scanned = scanned + blizzScanned
+        if source == "none" then
+            source = "blizzard"
         end
     end
 
@@ -2473,7 +2523,6 @@ UpdateBagHighlightsBody = function()
     local applied, missing, verified, offscreen = 0, 0, 0, 0
     wipe(highlightedButtons)
     findNextIndex = 0
-    local globalEnumList, legacyNameList
 
     if LegacyVendorDB and LegacyVendorDB.debug then
         local sw = UIParent and UIParent:GetWidth() or 0
@@ -2483,18 +2532,8 @@ UpdateBagHighlightsBody = function()
 
     for _, item in ipairs(items) do
         local button = buttonBySlot[item.bag .. ":" .. item.slot]
-
-        -- No bag-addon button for this slot: fall back to the generic search, but
-        -- only build the expensive whole-UI lists if we actually get here.
-        if not button then
-            if not globalEnumList and #customButtons == 0 then
-                globalEnumList = CollectGlobalEnumCandidates()
-                legacyNameList = CollectLegacyNameCandidates()
-            end
-            if globalEnumList then
-                local ok, found = pcall(FindButtonForBagSlot, item.bag, item.slot, globalEnumList, legacyNameList)
-                button = ok and found or nil
-            end
+        if not button and item.bag >= 0 and item.bag <= 5 then
+            button = FindBlizzardBagButton(item.bag, item.slot)
         end
 
         if button then
@@ -3716,6 +3755,12 @@ local function CreateMinimapButton()
             -- Quick toggle addon on/off
             LegacyVendorDB.enabled = not LegacyVendorDB.enabled
             Print("Addon " .. (LegacyVendorDB.enabled and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+            if addon.ScheduleHighlightUpdate then
+                addon.ScheduleHighlightUpdate()
+            end
+            if GameTooltip and GameTooltip:IsOwned(self) and self:GetScript("OnEnter") then
+                self:GetScript("OnEnter")(self)
+            end
         end
     end)
     

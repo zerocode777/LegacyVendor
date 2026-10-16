@@ -374,8 +374,12 @@ function Wizard.Goto(step)
             y = y - 58
         end
 
-        local protect = Track(body, CreateFrame("CheckButton", nil, body, "InterfaceOptionsCheckButtonTemplate"))
+        local protect = Track(body, CreateFrame("CheckButton", nil, body, "UICheckButtonTemplate"))
         protect:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y - 6)
+        if not protect.Text then
+            protect.Text = protect.text or protect:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            protect.Text:SetPoint("LEFT", protect, "RIGHT", 4, 0)
+        end
         protect.Text:SetText("Never sell uncollected mounts, toys or pets")
         protect:SetChecked(LegacyVendorDB.protectUncollected ~= false)
         protect:SetScript("OnClick", function(self)
