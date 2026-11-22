@@ -44,13 +44,21 @@ function addon.MigrateDB(db)
   return db
 end
 
+-- The sell mode actually used for decisions. Forever has no expansion gate, so
+-- "everything" would mean every item with a sell price; it is always "matching"
+-- there, whatever an imported string or old profile says.
+function addon.EffectiveSellMode(db)
+  if addon.isForever then return "matching" end
+  return db.sellMode or "everything"
+end
+
 function addon.SourceSkipped(skipSet, source)
   if not source or not skipSet then return false end
   return skipSet[source] == true
 end
 
 function addon.ResolveActiveFilters(db, expansionID)
-  local mode = db.sellMode or "everything"
+  local mode = addon.EffectiveSellMode(db)
   local profile = db.expansionProfiles and db.expansionProfiles[expansionID]
   local useOverride = (mode == "matching") and profile and profile.useDetailedFilters == true
 
@@ -113,10 +121,16 @@ local function joinList(t)
   return table.concat(t, ", ", 1, #t - 1) .. " & " .. t[#t]
 end
 
+-- " from <expansions>", or nothing on Forever where there is only one tier.
+local function fromExpansions(expText)
+  if addon.isForever then return "" end
+  return " from " .. expText
+end
+
 function addon.BuildActiveSummary(db)
-  local mode = db.sellMode or "everything"
+  local mode = addon.EffectiveSellMode(db)
   local exps = enabledExpansionNames(db)
-  if #exps == 0 then
+  if #exps == 0 and not addon.isForever then
     return { mode = mode, chips = {}, headline = "Nothing will sell — no expansions enabled." }
   end
   local expText = joinList(exps)
@@ -139,9 +153,9 @@ function addon.BuildActiveSummary(db)
   local chips = {
     "Rarity: " .. rarText,
     "Source: " .. ((#skipped > 0) and ("skip " .. joinList(skipped)) or "all"),
-    "Expansions: " .. expText,
   }
-  return { mode = mode, chips = chips, headline = "Selling " .. rarText .. " gear from " .. expText .. skipNote .. "." }
+  if not addon.isForever then chips[#chips + 1] = "Expansions: " .. expText end
+  return { mode = mode, chips = chips, headline = "Selling " .. rarText .. " gear" .. fromExpansions(expText) .. skipNote .. "." }
 end
 
 -- Builds one plain-English sentence describing exactly what the current filter set
@@ -157,12 +171,12 @@ end
 
 function addon.BuildFilterSentence(db)
   local exps = enabledExpansionNames(db)
-  if #exps == 0 then
+  if #exps == 0 and not addon.isForever then
     return "|cFFFF7F50Nothing will sell|r - no expansions are selected."
   end
 
   local expText = hl(joinList(exps))
-  local mode = db.sellMode or "everything"
+  local mode = addon.EffectiveSellMode(db)
 
   if mode == "everything" then
     return "Selling " .. hl("everything") .. " from " .. expText .. "."
@@ -198,7 +212,8 @@ function addon.BuildFilterSentence(db)
   table.sort(skipped2)
   local skipPart = (#skipped2 > 0) and (", but never from " .. hl(joinList(skipped2))) or ""
 
-  return "Selling " .. rarPart .. " items from " .. expText .. bindPart .. skipPart .. "."
+  local lowerPart = (addon.isForever and resolved.onlyLowerIlvl) and (", " .. hl("worse than what you wear")) or ""
+  return "Selling " .. rarPart .. " items" .. fromExpansions(expText) .. bindPart .. lowerPart .. skipPart .. "."
 end
 
 -- The hard stops run BEFORE every filter and silently override them, so a sentence
@@ -213,13 +228,13 @@ function addon.BuildProtectionSummary(db)
   if db.protectUncollectedAppearances then
     kept[#kept + 1] = "uncollected appearances"
   end
-  if db.strictSeasonalProtection ~= false then
+  if db.strictSeasonalProtection ~= false and not addon.isForever then
     kept[#kept + 1] = "current-season Mythic+ gear"
   end
   if db.protectHighIlvl and (db.highIlvlThreshold or 0) > 0 then
     kept[#kept + 1] = "anything at item level " .. db.highIlvlThreshold .. "+"
   end
-  if not db.sellWarbound then
+  if not db.sellWarbound and not addon.isForever then
     kept[#kept + 1] = "Warbound items"
   end
 

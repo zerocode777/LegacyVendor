@@ -754,7 +754,7 @@ local function GetFilterExpansionID(itemID, itemLink, expansionID, baseItemLevel
         return nil
     end
 
-    if LegacyVendorDB and LegacyVendorDB.sellMode == "everything" then
+    if LegacyVendorDB and addon.EffectiveSellMode(LegacyVendorDB) == "everything" then
         if IsCurrentSeasonLegacyItem(itemID, itemLink, expansionID, baseItemLevel, classID, equipLoc, bag, slot) then
             return addon.CURRENT_EXPANSION
         end
@@ -1020,7 +1020,9 @@ local function ShouldSellItem(bag, slot)
     end
 
     -- === FILTER 1: EXPANSION ===
-    if not db.expansions[filterExpansionID] then
+    -- Forever has no legacy/current expansion split - it's one content tier -
+    -- so there is nothing to gate on here.
+    if not addon.isForever and not db.expansions[filterExpansionID] then
         local expName = (addon.EXPANSIONS[filterExpansionID] and (addon.EXPANSIONS[filterExpansionID].short or addon.EXPANSIONS[filterExpansionID].name)) or "that expansion"
         DebugPrint("Expansion disabled:", filterExpansionID, itemLink, "bag=", bag, "slot=", slot)
         return false, expName .. " is not selected"
@@ -1037,7 +1039,7 @@ local function ShouldSellItem(bag, slot)
 
     local sourceRejectReason
     local function PassesSourceFilter()
-        if db.sellMode ~= "matching" then return true end
+        if addon.EffectiveSellMode(db) ~= "matching" then return true end
         local itemSource = GetItemSource(itemID, bag, slot)
         DebugPrint("Item source for", itemLink, ":", itemSource or "nil")
         if addon.SourceSkipped(resolved.itemSources, itemSource) then
@@ -1051,7 +1053,7 @@ local function ShouldSellItem(bag, slot)
 
     -- "Everything" mode: sell all legacy items from enabled expansions.
     -- Detailed filters (including source) intentionally do NOT apply here.
-    if db.sellMode == "everything" then
+    if addon.EffectiveSellMode(db) == "everything" then
         DebugPrint("Meta expansion sell-all matched:", filterExpansionID, itemLink)
         return true, itemLink, itemCount, sellPrice * itemCount, filterExpansionID
     end
@@ -1079,8 +1081,9 @@ local function ShouldSellItem(bag, slot)
         bindAllowed = true
     elseif bindStatus == "bou" and activeBindTypes.unbound then
         bindAllowed = true
-    elseif bindStatus == "warband" and db.sellWarbound then
-        -- Its own opt-in, never covered by any other bind toggle.
+    elseif bindStatus == "warband" and db.sellWarbound and not addon.isForever then
+        -- Its own opt-in, never covered by any other bind toggle. Forever has no
+        -- control for it, so an imported retail string cannot switch it on there.
         bindAllowed = true
     end
 
@@ -2732,7 +2735,7 @@ local function SellNextItem()
     if not isSelling or #itemsToSell == 0 then
         isSelling = false
         if itemsSoldCount > 0 and LegacyVendorDB.showSummary then
-            Print(string.format("Sold %d legacy item(s) for %s", itemsSoldCount, FormatMoney(sessionSoldCopper)))
+            Print(string.format("Sold %d %s(s) for %s", itemsSoldCount, addon.ITEM_NOUN, FormatMoney(sessionSoldCopper)))
         elseif itemsSoldCount == 0 and #blockedSales == 0 and LegacyVendorDB.showSummary then
             Print("No items were sold - items may have been moved or filters changed")
         end
@@ -2831,8 +2834,8 @@ local function StartSelling()
     if LegacyVendorDB.confirmSell then
         -- Show confirmation dialog
         StaticPopupDialogs["LEGACYVENDOR_CONFIRM"] = {
-            text = string.format("LegacyVendor: Sell %d legacy item(s) for approximately %s?", 
-                #itemsToSell, FormatMoney(totalGoldEarned)),
+            text = string.format("LegacyVendor: Sell %d %s(s) for approximately %s?",
+                #itemsToSell, addon.ITEM_NOUN, FormatMoney(totalGoldEarned)),
             button1 = "Yes",
             button2 = "No",
             OnAccept = function()
@@ -2926,6 +2929,7 @@ local function OnEvent(self, event, ...)
             end
 
             if addon.MigrateDB then addon.MigrateDB(LegacyVendorDB) end
+            if addon.ApplyForeverRules then addon.ApplyForeverRules(LegacyVendorDB) end
             EnsureExpansionProfiles(LegacyVendorDB)
             
             -- A character bound to a profile gets it applied before anything is
@@ -3034,7 +3038,7 @@ local function CreateSellButton()
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("|cFFFFD100LegacyVendor|r")
-        GameTooltip:AddLine("Click to sell legacy items", 1, 1, 1)
+        GameTooltip:AddLine("Click to sell matching " .. addon.ITEM_NOUN .. "s", 1, 1, 1)
 
         -- Explain the difference between the count on this button and the number of
         -- highlights actually on screen, rather than leaving it looking like a bug.
@@ -3210,7 +3214,9 @@ SLASH_LEGACYVENDOR2 = "/lv"
 
 SlashCmdList["LEGACYVENDOR"] = function(msg)
     msg = msg:lower():trim()
-    
+
+    if addon.ForeverBlocksCommand and addon.ForeverBlocksCommand(msg) then return end
+
     if msg == "" or msg == "help" then
         Print("Commands:")
         Print("  /lv toggle - Enable/disable addon")
@@ -3219,7 +3225,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv scan - Scan bags and show what would be sold")
         Print("  /lv sell - Manually trigger selling")
         Print("  /lv exclude - Exclude item you're hovering over")
-        Print("  /lv expansions - List expansion filter settings")
+        if not addon.isForever then Print("  /lv expansions - List expansion filter settings") end
         Print("  /lv minimap - Toggle minimap button")
         Print("  /lv resetbutton - Reset minimap button to default position")
         Print("  /lv highlight - Toggle bag highlighting")
@@ -3228,12 +3234,14 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         Print("  /lv setup - Guided setup: three questions instead of forty options")
         Print("  /lv protected - Manage the never-sell list")
         Print("  /lv find - Scroll your bags to the next matching item")
-        Print("  /lv stats - How much gold you have reclaimed, by expansion")
+        Print("  /lv stats - How much gold you have reclaimed")
         Print("  /lv export | /lv import - Share your filter setup as a string")
         Print("  /lv profiles - Save and switch between named filter setups")
         Print("  /lv exportlog - Open a copyable window with the debug log")
-        Print("  /lv strict - Toggle strict seasonal protection")
-        Print("  /lv meta - Toggle expansion sell-all mode")
+        if not addon.isForever then
+            Print("  /lv strict - Toggle strict seasonal protection")
+            Print("  /lv meta - Toggle expansion sell-all mode")
+        end
         
     elseif msg == "toggle" then
         LegacyVendorDB.enabled = not LegacyVendorDB.enabled
@@ -3245,7 +3253,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
         if LegacyVendorDB.autoSell then
             Print("Auto-sell |cFF00FF00enabled|r - Items will be sold automatically when visiting a vendor.")
         else
-            Print("Auto-sell |cFFFF0000disabled|r - Click the [Sell Legacy] button at vendors to sell.")
+            Print("Auto-sell |cFFFF0000disabled|r - Click the [Sell] button at vendors to sell.")
         end
         
     elseif msg == "config" or msg == "options" then
@@ -3258,7 +3266,7 @@ SlashCmdList["LEGACYVENDOR"] = function(msg)
     elseif msg == "scan" then
         local _, scanGold, items = CountSellable()
         if #items == 0 then
-            Print("No legacy BoP items found to sell.")
+            Print("No " .. addon.ITEM_NOUN .. "s found to sell.")
         else
             Print(string.format("Found %d item(s) worth approximately %s:", #items, FormatMoney(scanGold)))
             for i, item in ipairs(items) do
@@ -3723,7 +3731,7 @@ local function CreateMinimapButton()
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:SetText("|cFFFFD100LegacyVendor|r", 1, 1, 1)
-        GameTooltip:AddLine("Sell legacy BoP items at vendors", 1, 1, 1)
+        GameTooltip:AddLine("Sell " .. addon.ITEM_NOUN .. "s at vendors", 1, 1, 1)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("|cFF00FF00Left-Click:|r Open Settings", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("|cFF00FF00Right-Click:|r Toggle Enable/Disable", 0.8, 0.8, 0.8)

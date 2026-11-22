@@ -28,7 +28,7 @@ local function CreateOptionsPanel()
     do
         local variable = "LegacyVendor_Enabled"
         local name = "Enable LegacyVendor"
-        local tooltip = "Enable or disable automatic selling of legacy items."
+        local tooltip = "Enable or disable automatic selling of " .. addon.ITEM_NOUN .. "s."
 
         local setting = Settings.RegisterProxySetting(category, variable,
             Settings.VarType.Boolean, name, LegacyVendorDB.enabled,
@@ -220,16 +220,19 @@ local function CreateSimpleConfig()
     do
         local anchor = presetLabel
         for _, preset in ipairs(addon.Sections.Presets) do
-            local btn = addon.Widgets.CreatePresetButton(presetFrame, preset.name, preset.tooltip,
-                function()
-                    preset.apply(LegacyVendorDB)
-                    if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
-                    RefreshButton()
-                    RefreshConfigFrame()
-                    addon.Print(("Applied the \"%s\" preset."):format(preset.name))
-                end)
-            btn:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
-            anchor = btn
+            -- "Everything old" has no expansion gate to lean on on Forever.
+            if not (addon.isForever and preset.foreverHidden) then
+                local btn = addon.Widgets.CreatePresetButton(presetFrame, preset.name, preset.tooltip,
+                    function()
+                        preset.apply(LegacyVendorDB)
+                        if addon.ScheduleHighlightUpdate then addon.ScheduleHighlightUpdate() end
+                        RefreshButton()
+                        RefreshConfigFrame()
+                        addon.Print(("Applied the \"%s\" preset."):format(preset.name))
+                    end)
+                btn:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+                anchor = btn
+            end
         end
     end
 
@@ -281,7 +284,7 @@ local function CreateSimpleConfig()
     local detailFrames = {}
 
     local function RefreshDetailGrey()
-        local isMatching = LegacyVendorDB.sellMode == "matching"
+        local isMatching = addon.EffectiveSellMode(LegacyVendorDB) == "matching"
         local r, g, b = isMatching and 1 or 0.45, isMatching and 1 or 0.45, isMatching and 1 or 0.45
         for _, f in ipairs(detailFrames) do
             if f.SetAlpha then
@@ -528,21 +531,23 @@ local function CreateSimpleConfig()
         RefreshConfigFrame()
     end
 
-    AddSubLabel("SELLING MODE")
-
     -- Mutually exclusive, so render as two chips rather than two checkboxes that
-    -- merely behave like radio buttons.
-    yOffset = addon.Sections.RenderChipGroup(content, yOffset, {
-        { key = "everything", label = "Everything from those expansions",
-          icon = "Interface\\ICONS\\INV_Misc_Coin_01",
-          tooltip = "Ignore the detailed filters entirely. Fastest, least selective." },
-        { key = "matching", label = "Only what matches my filters",
-          icon = "Interface\\ICONS\\INV_Misc_Spyglass_02",
-          tooltip = "Walk through the step-by-step filters below." },
-    },
-    function(key) return LegacyVendorDB.sellMode == key end,
-    function(key, v) if v then SetMode(key) end end,
-    nil, nil, nil)
+    -- merely behave like radio buttons. Not shown on Forever: with no expansion gate
+    -- "everything" would mean every item with a sell price.
+    if not addon.isForever then
+        AddSubLabel("SELLING MODE")
+        yOffset = addon.Sections.RenderChipGroup(content, yOffset, {
+            { key = "everything", label = "Everything from those expansions",
+              icon = "Interface\\ICONS\\INV_Misc_Coin_01",
+              tooltip = "Ignore the detailed filters entirely. Fastest, least selective." },
+            { key = "matching", label = "Only what matches my filters",
+              icon = "Interface\\ICONS\\INV_Misc_Spyglass_02",
+              tooltip = "Walk through the step-by-step filters below." },
+        },
+        function(key) return LegacyVendorDB.sellMode == key end,
+        function(key, v) if v then SetMode(key) end end,
+        nil, nil, nil)
+    end
 
     AddSubLabel("SAFETY")
 
@@ -618,10 +623,22 @@ local function CreateSimpleConfig()
             RefreshSummary()
         end, true)
 
-    CreateCheckbox(content, "Protect current-season Mythic+ gear  |cFF44FF44(recommended)|r",
-        "Hard-protect current-season scaled legacy dungeon items. Overrides every sell filter.",
-        function() return LegacyVendorDB.strictSeasonalProtection ~= false end,
-        function(v) LegacyVendorDB.strictSeasonalProtection = v end, true)
+    if addon.isForever then
+        CreateCheckbox(content, "Only sell gear worse than what I'm wearing  |cFF44FF44(recommended)|r",
+            "Gear only sells when its item level is lower than what you have equipped in "
+            .. "that slot, so a fresh upgrade is never vendored by mistake.",
+            function() return LegacyVendorDB.onlySellLowerIlvl end,
+            function(v)
+                LegacyVendorDB.onlySellLowerIlvl = v
+                RefreshButton()
+                RefreshSummary()
+            end, true)
+    else
+        CreateCheckbox(content, "Protect current-season Mythic+ gear  |cFF44FF44(recommended)|r",
+            "Hard-protect current-season scaled legacy dungeon items. Overrides every sell filter.",
+            function() return LegacyVendorDB.strictSeasonalProtection ~= false end,
+            function(v) LegacyVendorDB.strictSeasonalProtection = v end, true)
+    end
 
     CreateCheckbox(content, "Auto-confirm \"will become non-tradeable\" prompts",
         "WoW warns before selling loot that is still tradeable to your group, which stops "
@@ -915,6 +932,12 @@ local function CreateSimpleConfig()
     -- ==================================================
     local AnyTrue = addon.Sections.AnyTrue
 
+    -- Step 1 (expansions) does not exist on Forever, so later steps renumber down.
+    local stepOffset = addon.isForever and 1 or 0
+    local function StepNo(n, suffix)
+        return tostring(n - stepOffset) .. (suffix or "")
+    end
+
     -- Which sections the flow shows depends on these four answers, and they are
     -- evaluated while the panel is being built. So a chip that changes one of them
     -- has to rebuild, or the step it unlocks never appears - which is exactly what
@@ -1002,19 +1025,25 @@ local function CreateSimpleConfig()
         AddSep()
     end
 
-    -- STEP 1: expansions. Always visible - everything else depends on it.
-    AddHeader("|cFFFFD100Step 1 - Which expansions?|r",
-        "Everything below narrows this. Current content is always protected.", "expansions")
-    SetTooltipScope("global")
+    -- STEP 1: expansions. Skipped on Forever - it has no legacy/current expansion
+    -- split to choose between, so there is nothing to gate the steps below on.
+    local haveExpansion
+    if addon.isForever then
+        haveExpansion = true
+    else
+        AddHeader("|cFFFFD100Step 1 - Which expansions?|r",
+            "Everything below narrows this. Current content is always protected.", "expansions")
+        SetTooltipScope("global")
 
-    yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, OnGatingFilterChanged, nil, RefreshConfigFrame)
+        yOffset = addon.Sections.RenderExpansions(content, yOffset, maxExpansion, OnGatingFilterChanged, nil, RefreshConfigFrame)
 
-    local haveExpansion = AnyTrue(LegacyVendorDB.expansions)
+        haveExpansion = AnyTrue(LegacyVendorDB.expansions)
+    end
 
     if not haveExpansion then
         AddGateHint("Pick at least one expansion above to carry on.")
 
-    elseif LegacyVendorDB.sellMode ~= "matching" then
+    elseif addon.EffectiveSellMode(LegacyVendorDB) ~= "matching" then
         -- In "sell everything" mode the detail filters genuinely do not run, so
         -- rendering them greyed-out was just noise. Say so instead.
         AddGateHint("You are in \"Everything from those expansions\" mode, so the detailed "
@@ -1027,7 +1056,7 @@ local function CreateSimpleConfig()
         AddSep()
 
         -- STEP 2: the branch point.
-        AddHeader("|cFFFFD100Step 2 - What kinds of items?|r",
+        AddHeader("|cFFFFD100Step " .. StepNo(2) .. " - What kinds of items?|r",
             "Pick one or both. Your choice decides which lists appear next.", "types")
         yOffset = addon.Sections.RenderItemKinds(content, yOffset, OnGatingFilterChanged, detailFrames, RefreshConfigFrame)
 
@@ -1040,7 +1069,7 @@ local function CreateSimpleConfig()
             -- STEP 3a: only when gear is in scope.
             if wantGear then
                 AddSep()
-                AddHeader("|cFFFFD100Step 3 - Which gear slots?|r",
+                AddHeader("|cFFFFD100Step " .. StepNo(3) .. " - Which gear slots?|r",
                     "Equippable items must match one of these.", "slots")
                 yOffset = addon.Sections.RenderEquipSlots(content, yOffset, OnGatingFilterChanged, detailFrames, RefreshConfigFrame)
             end
@@ -1048,7 +1077,7 @@ local function CreateSimpleConfig()
             -- STEP 3b: only when non-gear is in scope.
             if wantOther then
                 AddSep()
-                AddHeader("|cFFFFD100Step " .. (wantGear and "3b" or "3") .. " - Which other items?|r",
+                AddHeader("|cFFFFD100Step " .. StepNo(3, wantGear and "b" or nil) .. " - Which other items?|r",
                     "Crafting mats and quest items stay off until you pick them here.", "types")
                 yOffset = addon.Sections.RenderItemTypes(content, yOffset, OnGatingFilterChanged, detailFrames, RefreshConfigFrame)
             end
@@ -1056,21 +1085,21 @@ local function CreateSimpleConfig()
             AddSep()
 
             -- STEP 4: quality.
-            AddHeader("|cFFFFD100Step 4 - Which rarities?|r",
+            AddHeader("|cFFFFD100Step " .. StepNo(4) .. " - Which rarities?|r",
                 "An item must match one of these to sell.", "rarity")
             yOffset = addon.Sections.RenderRarities(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
             AddSep()
 
             -- STEP 5: bind state.
-            AddHeader("|cFFFFD100Step 5 - Which bind types?|r",
+            AddHeader("|cFFFFD100Step " .. StepNo(5) .. " - Which bind types?|r",
                 "An item must match one of these to sell.", "bind")
             yOffset = addon.Sections.RenderBindTypes(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
 
             AddSep()
 
             -- STEP 6: exclusions last - they subtract from everything decided above.
-            AddHeader("|cFFFFD100Step 6 - ...except never from|r  |cFFFF9944(optional)|r",
+            AddHeader("|cFFFFD100Step " .. StepNo(6) .. " - ...except never from|r  |cFFFF9944(optional)|r",
                 "Anything from a highlighted source is skipped, even if it matched every step above.", "sources")
             yOffset = addon.Sections.RenderSources(content, yOffset, RefreshLiveSummary, detailFrames, RefreshConfigFrame)
         end
@@ -1082,21 +1111,26 @@ local function CreateSimpleConfig()
     -- ADVANCED: per-expansion overrides (collapsible)
     -- Step 5: hidden by default; backed by LegacyVendorDB.showAdvanced
     -- ==================================================
-    local advOpen = LegacyVendorDB.showAdvanced == true
+    -- Hidden on Forever: there is only one tier, so the global filters are the
+    -- per-tier filters. The local is shared by the toggle button and body below.
+    local showAdvancedSection = not addon.isForever
+    local advOpen = showAdvancedSection and LegacyVendorDB.showAdvanced == true
     local advHeaderText = advOpen
         and "|cFFFFD100[-] Advanced: per-expansion overrides|r"
         or  "|cFF888888[+] Advanced: per-expansion overrides (click to expand)|r"
-    AddHeader(advHeaderText,
-        "Optional. Override the global filters for one specific expansion.")
+    if showAdvancedSection then
+        AddHeader(advHeaderText,
+            "Optional. Override the global filters for one specific expansion.")
 
-    -- Invisible click button over the header row
-    local advToggleBtn = CreateFrame("Button", nil, content)
-    advToggleBtn:SetPoint("TOPLEFT", 8, yOffset + 38 + 22 + 16)  -- covers header + subtitle
-    advToggleBtn:SetSize(430, 40)
-    advToggleBtn:SetScript("OnClick", function()
-        LegacyVendorDB.showAdvanced = not (LegacyVendorDB.showAdvanced == true)
-        RefreshConfigFrame()
-    end)
+        -- Invisible click button over the header row
+        local advToggleBtn = CreateFrame("Button", nil, content)
+        advToggleBtn:SetPoint("TOPLEFT", 8, yOffset + 38 + 22 + 16)  -- covers header + subtitle
+        advToggleBtn:SetSize(430, 40)
+        advToggleBtn:SetScript("OnClick", function()
+            LegacyVendorDB.showAdvanced = not (LegacyVendorDB.showAdvanced == true)
+            RefreshConfigFrame()
+        end)
+    end
 
     if advOpen then
         -- Styled selector bar
@@ -1255,17 +1289,19 @@ local function CreateSimpleConfig()
     -- ==================================================
     AddHeader("|cFFFFD100Quick Actions|r", nil, "actions")
 
-    MakeBtn(10, "Enable Legacy Expansions", function()
-        for i = 0, addon.CURRENT_EXPANSION - 1 do LegacyVendorDB.expansions[i] = true end
-        addon.Print("All legacy expansions enabled.")
-        RefreshConfigFrame()
-    end)
-    MakeBtn(216, "Disable All Expansions", function()
-        for i = 0, addon.CURRENT_EXPANSION do LegacyVendorDB.expansions[i] = false end
-        addon.Print("All expansions disabled.")
-        RefreshConfigFrame()
-    end)
-    yOffset = yOffset - 30
+    if not addon.isForever then
+        MakeBtn(10, "Enable Legacy Expansions", function()
+            for i = 0, addon.CURRENT_EXPANSION - 1 do LegacyVendorDB.expansions[i] = true end
+            addon.Print("All legacy expansions enabled.")
+            RefreshConfigFrame()
+        end)
+        MakeBtn(216, "Disable All Expansions", function()
+            for i = 0, addon.CURRENT_EXPANSION do LegacyVendorDB.expansions[i] = false end
+            addon.Print("All expansions disabled.")
+            RefreshConfigFrame()
+        end)
+        yOffset = yOffset - 30
+    end
 
     -- Quick Actions: equip slots and rarities now target global DB fields
     MakeBtn(10, "Enable All Equip Slots", function()

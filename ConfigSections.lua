@@ -136,10 +136,14 @@ function Sections.RenderBindTypes(content, yOffset, onChange, registry, rebuild)
           tooltip = "Sell Bind on Equip items that are already bound." },
         { key = "unbound", label = V.ShortLabel.unbound, icon = V.BindIcon.unbound,
           tooltip = "Sell items that never bound - old food, reagents. Be careful." },
-        { key = "warband", label = V.ShortLabel.warband, icon = V.BindIcon.warband,
-          tooltip = "Warbound items are shared by every character on your account - "
-                 .. "selling one here removes it for all of them. Off by default." },
     }
+    -- Forever has no confirmed Warbound items; the opt-in stays off there, so the
+    -- hard protection in Core still holds for anything account-bound.
+    if not addon.isForever then
+        specs[#specs + 1] = { key = "warband", label = V.ShortLabel.warband, icon = V.BindIcon.warband,
+          tooltip = "Warbound items are shared by every character on your account - "
+                 .. "selling one here removes it for all of them. Off by default." }
+    end
 
     local field = { bop = "sellBoP", boe = "sellBoE", unbound = "sellUnbound", warband = "sellWarbound" }
 
@@ -300,6 +304,7 @@ Sections.Presets = {
     },
     {
         name = "Everything old",
+        foreverHidden = true, -- no expansion gate on Forever: would sell everything
         tooltip = "Sell all legacy items from the expansions you pick, ignoring the "
                .. "detailed filters. Fastest cleanup.",
         apply = function(db)

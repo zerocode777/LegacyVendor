@@ -34,6 +34,7 @@ local function Snapshot(db)
         highIlvlThreshold = db.highIlvlThreshold,
         sellWarbound = db.sellWarbound,
         sellGray = db.sellGray,
+        onlySellLowerIlvl = db.onlySellLowerIlvl,
     }
 end
 
@@ -60,8 +61,9 @@ local SCOPE_CHOICES = {
         end,
     },
     {
-        name = "Gear + old consumables",
-        desc = "Also clears out stale food, potions and flasks from old expansions.",
+        name = addon.isForever and "Gear + consumables" or "Gear + old consumables",
+        desc = addon.isForever and "Also clears out food, potions and other consumables."
+            or "Also clears out stale food, potions and flasks from old expansions.",
         icon = "Interface\\ICONS\\INV_Potion_54",
         apply = function(db)
             db.sellMode = "matching"
@@ -73,6 +75,7 @@ local SCOPE_CHOICES = {
     },
     {
         name = "Everything from those expansions",
+        foreverHidden = true, -- no expansion gate on Forever: would sell everything
         desc = "Sells all legacy items from the expansions you picked. Fastest, least selective.",
         icon = "Interface\\ICONS\\INV_Misc_Coin_01",
         apply = function(db)
@@ -286,16 +289,23 @@ function Wizard.RefreshLive()
     end
 end
 
+-- Forever has no legacy/current expansion split to choose between, so step 1
+-- (expansion selection) is skipped there and the remaining steps renumber down.
+local function FirstStep()
+    return addon.isForever and 2 or 1
+end
+
 function Wizard.Goto(step)
-    step = math.max(1, math.min(STEP_COUNT, step))
+    step = math.max(FirstStep(), math.min(STEP_COUNT, step))
     Wizard.step = step
 
     local f = Wizard.frame
     local body = f.Body
     ClearBody(body)
 
-    f.StepText:SetText(("|cFF888888Step %d of %d|r"):format(step, STEP_COUNT))
-    f.Back:SetEnabled(step > 1)
+    f.StepText:SetText(("|cFF888888Step %d of %d|r"):format(
+        step - FirstStep() + 1, STEP_COUNT - FirstStep() + 1))
+    f.Back:SetEnabled(step > FirstStep())
     f.Next:SetText(step >= STEP_COUNT and "Finish" or "Next")
 
     if step == 1 then
@@ -342,17 +352,19 @@ function Wizard.Goto(step)
 
         local y = 0
         for idx, choice in ipairs(SCOPE_CHOICES) do
-            local card
-            card = Track(body, CreateChoiceCard(body, choice,
-                LegacyVendorDB._wizScope == idx,
-                function()
-                    LegacyVendorDB._wizScope = idx
-                    choice.apply(LegacyVendorDB)
-                    Wizard.Goto(2)
-                end))
-            card:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y)
-            card:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, y)
-            y = y - 58
+            if not (addon.isForever and choice.foreverHidden) then
+                local card
+                card = Track(body, CreateChoiceCard(body, choice,
+                    LegacyVendorDB._wizScope == idx,
+                    function()
+                        LegacyVendorDB._wizScope = idx
+                        choice.apply(LegacyVendorDB)
+                        Wizard.Goto(2)
+                    end))
+                card:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y)
+                card:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, y)
+                y = y - 58
+            end
         end
 
     elseif step == 3 then
@@ -382,6 +394,19 @@ function Wizard.Goto(step)
             LegacyVendorDB.protectUncollected = self:GetChecked()
             Wizard.RefreshLive()
         end)
+
+        -- On Forever there is no expansion gate, so this is the main guard against
+        -- vendoring an upgrade; surface it where the "how careful" choice is made.
+        if addon.isForever then
+            local lower = Track(body, CreateFrame("CheckButton", nil, body, "InterfaceOptionsCheckButtonTemplate"))
+            lower:SetPoint("TOPLEFT", protect, "BOTTOMLEFT", 0, -2)
+            lower.Text:SetText("Only sell gear worse than what I'm wearing")
+            lower:SetChecked(LegacyVendorDB.onlySellLowerIlvl)
+            lower:SetScript("OnClick", function(self)
+                LegacyVendorDB.onlySellLowerIlvl = self:GetChecked()
+                Wizard.RefreshLive()
+            end)
+        end
 
     else
         f.Question:SetText("Here's what that means")
@@ -424,8 +449,13 @@ function Wizard.Goto(step)
             end
         else
             lines[#lines + 1] = "|cFFFFCC00Nothing in your bags matches these settings right now.|r"
-            lines[#lines + 1] = "That is fine - it just means this character has no old"
-            lines[#lines + 1] = "clutter from the expansions you picked."
+            if addon.isForever then
+                lines[#lines + 1] = "That is fine - it just means this character has nothing"
+                lines[#lines + 1] = "to clear out right now."
+            else
+                lines[#lines + 1] = "That is fine - it just means this character has no old"
+                lines[#lines + 1] = "clutter from the expansions you picked."
+            end
         end
         list:SetText(table.concat(lines, "\n"))
     end

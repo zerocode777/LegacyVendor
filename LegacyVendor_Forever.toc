@@ -1,0 +1,24 @@
+## Interface: 16001
+## Title: Legacy Vendor
+## Notes: Sells junk and gear you have outgrown at vendors, with collection and upgrade protection. WoW Forever edition.
+## Author: LegacyVendor
+## Version: 3.0.1
+## SavedVariables: LegacyVendorDB
+## IconTexture: Interface\Icons\INV_Misc_Coin_01
+## X-Category: Inventory
+## X-License: MIT
+## X-Website: https://www.curseforge.com/wow/addons/legacy-vendor
+
+CompatForever.lua
+Compat.lua
+Filters.lua
+Core.lua
+ConfigWidgets.lua
+ConfigIcons.lua
+ConfigSections.lua
+ConfigWizard.lua
+ConfigExclusions.lua
+ConfigShare.lua
+ConfigProfiles.lua
+Config.lua
+ForeverMode.lua

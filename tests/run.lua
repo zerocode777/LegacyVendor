@@ -15,6 +15,7 @@ _G.__LV_ARGS = function() return makeArgs(addon) end
 _G.__LV_TEST = T
 
 dofile("tests/test_filters.lua")
+dofile("tests/test_forever.lua")
 
 local failed = 0
 for _, t in ipairs(tests) do

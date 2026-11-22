@@ -5,6 +5,18 @@ All notable changes to Legacy Vendor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- WoW Forever support. The addon now loads on Forever (interface 16001) with a
+  version shaped for it: no expansion picker, no Mythic+ season protection, no
+  housing/delve source and no Warbound opt-in, since Forever has none of those to
+  filter by. Selling always uses your filters there - "everything" mode is gone,
+  because with no expansions to narrow it, it would mean every item in your bags.
+- On Forever, "Only sell gear worse than what I'm wearing" is a top-level safety
+  option, on by default, so a fresh upgrade is never vendored. Uncollected
+  appearance protection also starts on, as Forever's transmog collection is new.
+
 ## [3.0.1] - 2026-08-30
 
 ### Changed

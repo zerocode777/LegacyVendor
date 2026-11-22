@@ -5,16 +5,30 @@ local addonName, addon = ...
 
 -- Detect WoW version
 local tocVersion = select(4, GetBuildInfo())
-addon.isRetail = tocVersion >= 100000
+-- WoW: Forever reports interface 16001, which the ranges below would read as
+-- Classic Era - but it runs the Mainline client and API. CompatForever.lua (loaded
+-- only by LegacyVendor_Forever.toc) sets the flag, and it takes precedence here.
+addon.isForever = addon.isForever or false
+local isForever = addon.isForever
+
+addon.isRetail = not isForever and tocVersion >= 100000
 addon.isMoP = tocVersion >= 50000 and tocVersion < 60000
 addon.isCata = tocVersion >= 40000 and tocVersion < 50000
 addon.isWrath = tocVersion >= 30000 and tocVersion < 40000
 addon.isTBC = tocVersion >= 20000 and tocVersion < 30000
-addon.isClassicEra = tocVersion < 20000
-addon.isClassic = not addon.isRetail
+addon.isClassicEra = not isForever and tocVersion < 20000
+addon.isClassic = not addon.isRetail and not isForever
+
+-- Noun used in user-facing messages. "Legacy" means nothing on Forever, which has
+-- its own unrelated Legacy system, so it gets a plain wording.
+addon.ITEM_NOUN = isForever and "item" or "legacy item"
 
 -- Version-specific expansion list
-if addon.isClassicEra then
+if isForever then
+    -- One content tier, no legacy/current split. Every item counts as tier 0.
+    addon.MAX_EXPANSION = 0
+    addon.CURRENT_EXPANSION = 0
+elseif addon.isClassicEra then
     -- Classic Era only has Vanilla
     addon.MAX_EXPANSION = 0
     addon.CURRENT_EXPANSION = 0
@@ -238,7 +252,7 @@ end
 -- In Classic, items don't have expansion IDs in GetItemInfo
 -- We need to estimate based on item level or just return 0
 function addon.GetItemExpansionCompat(itemID)
-    if addon.isClassicEra then
+    if addon.isClassicEra or addon.isForever then
         return 0 -- Everything is Classic
     end
     
@@ -293,6 +307,6 @@ addon.hasAddonCompartment = AddonCompartmentFrame and AddonCompartmentFrame.Regi
 -- Print compatibility info on load
 addon.compatInfo = string.format("WoW %s | %s | Max Expansion: %d",
     tocVersion,
-    addon.isRetail and "Retail" or (addon.isCata and "Cataclysm" or (addon.isWrath and "WotLK" or "Classic Era")),
+    addon.isForever and "Forever" or addon.isRetail and "Retail" or (addon.isCata and "Cataclysm" or (addon.isWrath and "WotLK" or "Classic Era")),
     addon.MAX_EXPANSION or 0
 )
