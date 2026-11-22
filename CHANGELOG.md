@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Forever, "Only sell gear worse than what I'm wearing" is a top-level safety
   option, on by default, so a fresh upgrade is never vendored. Uncollected
   appearance protection also starts on, as Forever's transmog collection is new.
+- Forever: the item level limit can follow the gear you are wearing instead of a
+  fixed number (on by default), so it rises as you gear up.
+- Forever: "Only sell gear I have out-levelled" - gear sells only once its required
+  level is a set number of levels below yours (10 by default; off by default).
+- Forever: soulbound gear your class can never use - armour too heavy for you,
+  shields, wands, items restricted to other classes - always sells, even past your
+  rarity and item level filters (on by default).
+- Forever: gear saved in an equipment set is never sold, so a dual-spec off-set is
+  safe (on by default).
+- Forever: a warning when your bags are almost full, naming the cheapest items you
+  could sell (4 free slots by default).
 
 ## [3.0.1] - 2026-08-30
 

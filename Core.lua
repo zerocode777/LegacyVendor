@@ -995,14 +995,25 @@ local function ShouldSellItem(bag, slot)
     --
     -- Effective item level, not the base value, so a legacy piece scaled up by
     -- current-season bonus IDs is measured at its real strength.
-    if db.protectHighIlvl and (db.highIlvlThreshold or 0) > 0 then
+    -- Forever-only fields, shared by the limit hook here and the item rule below.
+    local foreverInfo = addon.isForever and {
+        itemID = itemID, link = itemLink, equipLoc = equipLoc, classID = classID,
+        subClassID = subClassID, reqLevel = itemInfo[5], bag = bag, slot = slot,
+    } or nil
+
+    -- Forever can derive the limit from equipped gear, or drop it for gear this
+    -- class can never wear (ForeverRules.lua); elsewhere it is the saved number.
+    local ilvlLimit = db.highIlvlThreshold
+    if addon.GetIlvlLimit then ilvlLimit = addon.GetIlvlLimit(db, itemID, foreverInfo) end
+
+    if db.protectHighIlvl and (ilvlLimit or 0) > 0 then
         local isGear = equipLoc and equipLoc ~= ""
         if isGear and GetDetailedItemLevelInfo then
             local effIlvl = GetDetailedItemLevelInfo(itemLink)
-            if effIlvl and effIlvl >= db.highIlvlThreshold then
-                DebugPrint("Item level protection:", effIlvl, ">=", db.highIlvlThreshold, itemLink)
+            if effIlvl and effIlvl >= ilvlLimit then
+                DebugPrint("Item level protection:", effIlvl, ">=", ilvlLimit, itemLink)
                 return false, ("item level %d is at or above your %d limit"):format(
-                    effIlvl, db.highIlvlThreshold)
+                    effIlvl, ilvlLimit)
             end
         end
     end
@@ -1017,6 +1028,19 @@ local function ShouldSellItem(bag, slot)
     if db.sellGray and quality == 0 then
         DebugPrint("Selling gray item:", itemLink)
         return true, itemLink, itemCount, sellPrice * itemCount, filterExpansionID
+    end
+
+    -- Forever rules (ForeverRules.lua): equipment sets, never-usable gear,
+    -- out-levelled gear. A verdict here settles the item; nil falls through.
+    if addon.ForeverItemRule and foreverInfo then
+        local verdict, ruleReason = addon.ForeverItemRule(db, foreverInfo)
+        if verdict == false then
+            DebugPrint("Forever rule keeps:", ruleReason, itemLink)
+            return false, ruleReason
+        elseif verdict == true then
+            DebugPrint("Forever rule sells (never usable by class):", itemLink)
+            return true, itemLink, itemCount, sellPrice * itemCount, filterExpansionID
+        end
     end
 
     -- === FILTER 1: EXPANSION ===

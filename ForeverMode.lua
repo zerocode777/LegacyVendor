@@ -33,6 +33,18 @@ function addon.ForeverBlocksCommand(msg)
     return true
 end
 
+-- Forever-only settings (ForeverRules / ForeverOptions / ForeverBagAlert). Filled in
+-- whenever missing, so saves made before a setting existed pick it up too.
+local FOREVER_SETTINGS = {
+    autoIlvlLimit = true,         -- item level limit follows equipped average
+    onlyOutgrownGear = false,     -- only sell gear N+ levels below the character
+    outgrownLevels = 10,
+    sellUnusableGear = true,      -- soulbound gear this class can never wear
+    protectEquipmentSets = true,  -- never sell gear saved in an equipment set
+    bagFullWarning = true,
+    bagFullSlots = 4,
+}
+
 -- One-time defaults for a fresh Forever install. Applied once per saved-variable
 -- file, so anything the player changes afterwards sticks.
 local function ApplyFirstRunDefaults(db)
@@ -64,6 +76,10 @@ function addon.ApplyForeverRules(db)
     -- Nothing in Forever is scaled by M+ bonus IDs; the check is inert there anyway
     -- (CURRENT_EXPANSION is 0), so keep the flag off to keep summaries honest.
     db.strictSeasonalProtection = false
+
+    for key, value in pairs(FOREVER_SETTINGS) do
+        if db[key] == nil then db[key] = value end
+    end
 
     ApplyFirstRunDefaults(db)
 end

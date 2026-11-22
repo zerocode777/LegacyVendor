@@ -231,9 +231,12 @@ function addon.BuildProtectionSummary(db)
   if db.strictSeasonalProtection ~= false and not addon.isForever then
     kept[#kept + 1] = "current-season Mythic+ gear"
   end
-  if db.protectHighIlvl and (db.highIlvlThreshold or 0) > 0 then
+  if db.protectHighIlvl and addon.isForever and db.autoIlvlLimit then
+    kept[#kept + 1] = "gear at or above your equipped item level"
+  elseif db.protectHighIlvl and (db.highIlvlThreshold or 0) > 0 then
     kept[#kept + 1] = "anything at item level " .. db.highIlvlThreshold .. "+"
   end
+  if addon.ForeverProtectionLines then addon.ForeverProtectionLines(db, kept) end
   if not db.sellWarbound and not addon.isForever then
     kept[#kept + 1] = "Warbound items"
   end

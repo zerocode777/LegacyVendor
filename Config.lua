@@ -575,7 +575,8 @@ local function CreateSimpleConfig()
 
     -- On its own row beneath the checkbox. Sharing the checkbox's row meant the box
     -- landed on top of the label text, which varies in width by locale and font.
-    do
+    -- Hidden on Forever while the limit follows equipped gear (ForeverOptions.lua).
+    if not (addon.isForever and LegacyVendorDB.autoIlvlLimit) then
         local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lbl:SetPoint("TOPLEFT", 46, yOffset - 2)
         lbl:SetText("|cFF888888Item level limit:|r")
@@ -652,6 +653,43 @@ local function CreateSimpleConfig()
         "Show a confirmation dialog listing what is about to be sold.",
         function() return LegacyVendorDB.confirmSell end,
         function(v) LegacyVendorDB.confirmSell = v end)
+
+    -- Forever-only rows (ForeverOptions.lua). Handed layout helpers instead of
+    -- building frames itself, so the rows join this panel's spacing and search.
+    if addon.RenderForeverOptions then
+        addon.RenderForeverOptions({
+            checkbox = function(label, tooltip, get, set)
+                return CreateCheckbox(content, label, tooltip, get, set, true)
+            end,
+            numberRow = function(label, get, set, suffix)
+                local text = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                text:SetPoint("TOPLEFT", 46, yOffset - 2)
+                text:SetText("|cFF888888" .. label .. "|r")
+                local box = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+                box:SetSize(44, 20)
+                box:SetPoint("LEFT", text, "RIGHT", 12, 0)
+                box:SetAutoFocus(false)
+                box:SetNumeric(true)
+                box:SetMaxLetters(3)
+                box:SetText(tostring(get()))
+                local function Commit(self)
+                    set(tonumber(self:GetText()) or 0)
+                    self:SetText(tostring(get()))
+                    self:ClearFocus()
+                    RefreshButton()
+                    RefreshSummary()
+                end
+                box:SetScript("OnEnterPressed", Commit)
+                box:SetScript("OnEditFocusLost", Commit)
+                local after = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                after:SetPoint("LEFT", box, "RIGHT", 8, 0)
+                after:SetText("|cFF888888" .. (suffix or "") .. "|r")
+                yOffset = yOffset - 26
+            end,
+            subLabel = AddSubLabel,
+            rebuild = RefreshConfigFrame,
+        })
+    end
 
     AddSubLabel("BEHAVIOUR")
 

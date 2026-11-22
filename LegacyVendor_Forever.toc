@@ -13,6 +13,8 @@ CompatForever.lua
 Compat.lua
 Filters.lua
 Core.lua
+ForeverRules.lua
+ForeverBagAlert.lua
 ConfigWidgets.lua
 ConfigIcons.lua
 ConfigSections.lua
@@ -21,4 +23,5 @@ ConfigExclusions.lua
 ConfigShare.lua
 ConfigProfiles.lua
 Config.lua
+ForeverOptions.lua
 ForeverMode.lua
